@@ -485,7 +485,10 @@
       <section id="adminSectionQuizzes" class="content-section hidden">
         <div class="section-head-row">
           <h2>Quizzes</h2>
-          <button class="btn btn-outline btn-sm" id="refreshAdminQuizzesBtn">Refresh</button>
+          <div class="row-actions">
+            <button class="btn btn-outline btn-sm" id="refreshAdminQuizzesBtn">Refresh</button>
+            <button class="btn btn-primary btn-sm" id="newQuizBtn">+ Add Quiz</button>
+          </div>
         </div>
         <div id="adminQuizzesTable" class="table-wrap"></div>
       </section>
@@ -678,6 +681,32 @@
 </div>
 
 <!-- ============================================================ -->
+<!-- ADD QUIZ / ADD QUESTIONS MODAL -->
+<!-- ============================================================ -->
+<div id="addQuizModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="addQuizModalTitle">Add Quiz</h3>
+    <form id="addQuizForm">
+      <label class="field" id="addQuizNameField">
+        <span>Quiz Name</span>
+        <input type="text" id="addQuizName" placeholder="e.g. Physics Chapter 1" required>
+      </label>
+      <label class="field">
+        <span>Questions</span>
+        <textarea id="addQuizQuestionsText" rows="10" placeholder="Paste directly from Google Sheets / Excel — select the Question, Option A-D, Correct Answer columns and Ctrl+C, Ctrl+V here." required></textarea>
+      </label>
+      <p class="field-hint">Easiest way: in your Google Sheet, select the 6 columns (Question, Option A, Option B, Option C, Option D, Correct Answer) for all your questions, <strong>Ctrl+C</strong>, then <strong>Ctrl+V</strong> directly into the box above — it pastes correctly on its own.<br>
+        Correct Answer column can be either the letter (A/B/C/D) or the full answer text — both work.</p>
+      <div id="addQuizError" class="form-error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="addQuizCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="addQuizSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
 <!-- QUIZ RESULT MODAL -->
 <!-- ============================================================ -->
 <div id="resultModal" class="modal-backdrop hidden">
@@ -797,6 +826,6 @@
   </div>
 </div>
 
-<script src="script.js"></script>
+<script type="module" src="script.js"></script>
 </body>
 </html>
