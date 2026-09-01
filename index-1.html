@@ -1,0 +1,831 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARY Quize Bank — Assessment Platform</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<!-- ============================================================ -->
+<!-- TOAST CONTAINER -->
+<!-- ============================================================ -->
+<div id="toastContainer" class="toast-container" aria-live="polite"></div>
+
+<!-- ============================================================ -->
+<!-- CONFIRM MODAL -->
+<!-- ============================================================ -->
+<div id="confirmModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="confirmModalTitle">Are you sure?</h3>
+    <p id="confirmModalBody">This action cannot be undone.</p>
+    <div class="modal-actions">
+      <button id="confirmModalCancel" class="btn btn-ghost">Cancel</button>
+      <button id="confirmModalOk" class="btn btn-danger">Confirm</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PUBLIC: SITE HEADER -->
+<!-- ============================================================ -->
+<header id="publicHeader" class="public-header">
+  <div class="public-header-inner">
+    <a href="#" class="brand" data-nav="home">
+      <span class="brand-mark">AQ</span>
+      <span class="brand-text">ARY Quize Bank</span>
+    </a>
+    <nav class="public-nav">
+      <a href="#" data-nav="home">Home</a>
+      <a href="#" data-nav="contact">Contact</a>
+      <a href="#" data-nav="student-login" class="btn btn-ghost btn-sm">Student Login</a>
+      <a href="#" data-nav="admin-login" class="btn btn-outline btn-sm">Admin Login</a>
+      <a href="#" data-nav="student-register" class="btn btn-primary btn-sm">Register</a>
+    </nav>
+    <button id="mobileNavToggle" class="mobile-nav-toggle" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
+  </div>
+  <div id="mobileNavPanel" class="mobile-nav-panel hidden">
+    <a href="#" data-nav="home">Home</a>
+    <a href="#" data-nav="contact">Contact</a>
+    <a href="#" data-nav="student-login">Student Login</a>
+    <a href="#" data-nav="admin-login">Admin Login</a>
+    <a href="#" data-nav="student-register">Register</a>
+  </div>
+</header>
+
+<!-- ============================================================ -->
+<!-- SECTION: HOME (LANDING) -->
+<!-- ============================================================ -->
+<main id="section-home" class="app-section public-section">
+
+  <section class="hero">
+    <div class="hero-inner">
+      <div class="hero-copy">
+        <p class="eyebrow">Nursing education, assessed properly</p>
+        <h1>Quizzes that mirror how your students will actually be tested.</h1>
+        <p class="hero-sub">ARY Quize Bank gives every student a structured, timed, MCQ assessment — and gives you a clear picture of who understood the material and who needs another pass.</p>
+        <div class="hero-actions">
+          <a href="#" data-nav="student-register" class="btn btn-primary btn-lg">Register as a student</a>
+          <a href="#" data-nav="student-login" class="btn btn-outline btn-lg">I already have an account</a>
+        </div>
+      </div>
+      <div class="hero-visual" aria-hidden="true">
+        <div class="mock-quiz-card">
+          <div class="mock-quiz-card-head">
+            <span class="mock-dot"></span>
+            <span class="mock-quiz-title">Pathophysiology — Unit 5</span>
+            <span class="mock-timer">08:42</span>
+          </div>
+          <p class="mock-question">Which finding is most consistent with hypovolemic shock?</p>
+          <div class="mock-options">
+            <div class="mock-option is-selected"><span>A</span>Tachycardia and cool extremities</div>
+            <div class="mock-option"><span>B</span>Bradycardia and warm skin</div>
+            <div class="mock-option"><span>C</span>Bounding peripheral pulses</div>
+            <div class="mock-option"><span>D</span>Elevated urine output</div>
+          </div>
+          <div class="mock-progress"><div class="mock-progress-bar" style="width:64%"></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="features">
+    <div class="section-inner">
+      <h2>Built for a real teaching workflow</h2>
+      <div class="feature-grid">
+        <div class="feature-card">
+          <h3>Every quiz, one system</h3>
+          <p>New assessments are added as plain question tabs and appear on the platform automatically — no redeployment needed.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Approval before access</h3>
+          <p>Students register and wait for admin approval, so only your class can attempt your quizzes.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Answers stay server-side</h3>
+          <p>Correct answers are never sent to the browser before submission — scoring happens on the backend.</p>
+        </div>
+        <div class="feature-card">
+          <h3>Results you can act on</h3>
+          <p>Per-student history, per-quiz averages, and class-level performance, in one dashboard.</p>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <section class="cta-strip">
+    <div class="section-inner cta-strip-inner">
+      <div>
+        <h2>Ready to take a quiz?</h2>
+        <p>Log in with your student account, or register if this is your first time.</p>
+      </div>
+      <div class="hero-actions">
+        <a href="#" data-nav="student-login" class="btn btn-primary btn-lg">Student Login</a>
+      </div>
+    </div>
+  </section>
+
+</main>
+
+<!-- ============================================================ -->
+<!-- SECTION: CONTACT (PUBLIC) -->
+<!-- ============================================================ -->
+<main id="section-contact" class="app-section public-section hidden">
+  <section class="narrow-section">
+    <h1>Contact with us</h1>
+    <p class="section-sub">Reach the people behind ARY Quize Bank.</p>
+    <div id="contactCardsPublic" class="contact-grid"></div>
+  </section>
+</main>
+
+<!-- ============================================================ -->
+<!-- SECTION: STUDENT LOGIN -->
+<!-- ============================================================ -->
+<main id="section-student-login" class="app-section public-section hidden">
+  <section class="auth-section">
+    <form id="studentLoginForm" class="auth-card">
+      <h1>Student Login</h1>
+      <p class="section-sub">Log in to access your quizzes and results.</p>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" id="loginEmail" required autocomplete="email">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" id="loginPassword" required autocomplete="current-password">
+      </label>
+      <div id="studentLoginError" class="form-error hidden"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="studentLoginBtn">
+        <span class="btn-label">Log In</span>
+      </button>
+      <p class="auth-switch">New here? <a href="#" data-nav="student-register">Create an account</a></p>
+    </form>
+  </section>
+</main>
+
+<!-- ============================================================ -->
+<!-- SECTION: STUDENT REGISTRATION -->
+<!-- ============================================================ -->
+<main id="section-student-register" class="app-section public-section hidden">
+  <section class="auth-section">
+    <form id="studentRegisterForm" class="auth-card auth-card-wide">
+      <h1>Student Registration</h1>
+      <p class="section-sub">Your account will stay pending until an admin approves it.</p>
+
+      <div class="avatar-upload">
+        <img id="regPhotoPreview" class="avatar-preview" src="" alt="Profile preview">
+        <div>
+          <label class="btn btn-outline btn-sm" for="regPhotoInput">Upload photo</label>
+          <input type="file" id="regPhotoInput" accept="image/*" class="hidden">
+          <p class="field-hint">Optional. JPG or PNG, kept small.</p>
+        </div>
+      </div>
+
+      <label class="field">
+        <span>Full Name</span>
+        <input type="text" id="regName" required>
+      </label>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" id="regEmail" required>
+      </label>
+      <label class="field">
+        <span>Class</span>
+        <input type="text" id="regClass" placeholder="e.g. BSN-3A" required>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Password</span>
+          <input type="password" id="regPassword" required minlength="6">
+        </label>
+        <label class="field">
+          <span>Confirm Password</span>
+          <input type="password" id="regConfirmPassword" required minlength="6">
+        </label>
+      </div>
+      <div id="studentRegisterError" class="form-error hidden"></div>
+      <div id="studentRegisterSuccess" class="form-success hidden"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="studentRegisterBtn">
+        <span class="btn-label">Create Account</span>
+      </button>
+      <p class="auth-switch">Already registered? <a href="#" data-nav="student-login">Log in</a></p>
+    </form>
+  </section>
+</main>
+
+<!-- ============================================================ -->
+<!-- SECTION: ADMIN LOGIN -->
+<!-- ============================================================ -->
+<main id="section-admin-login" class="app-section public-section hidden">
+  <section class="auth-section">
+    <form id="adminLoginForm" class="auth-card">
+      <h1>Admin Login</h1>
+      <p class="section-sub">For authorized administrators only.</p>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" id="adminLoginEmail" required autocomplete="email">
+      </label>
+      <label class="field">
+        <span>Password</span>
+        <input type="password" id="adminLoginPassword" required autocomplete="current-password">
+      </label>
+      <div id="adminLoginError" class="form-error hidden"></div>
+      <button type="submit" class="btn btn-primary btn-block" id="adminLoginBtn">
+        <span class="btn-label">Log In</span>
+      </button>
+    </form>
+  </section>
+</main>
+
+<!-- ============================================================ -->
+<!-- STUDENT APP SHELL -->
+<!-- ============================================================ -->
+<div id="studentApp" class="app-shell hidden">
+  <aside class="sidebar" id="studentSidebar">
+    <div class="sidebar-brand">
+      <span class="brand-mark">AQ</span>
+      <span class="brand-text">ARY Quize Bank</span>
+    </div>
+    <div class="sidebar-user">
+      <img id="studentSidebarPhoto" class="avatar-sm" src="" alt="">
+      <div>
+        <p id="studentSidebarName" class="sidebar-user-name">—</p>
+        <p id="studentSidebarClass" class="sidebar-user-sub">—</p>
+      </div>
+    </div>
+    <nav class="sidebar-nav">
+      <a href="#" data-nav="student-dashboard" data-icon="grid">Dashboard</a>
+      <a href="#" data-nav="student-quizzes" data-icon="list">Available Quizzes</a>
+      <a href="#" data-nav="student-results" data-icon="chart">Results</a>
+      <a href="#" data-nav="student-history" data-icon="clock">Quiz History</a>
+      <a href="#" data-nav="student-profile" data-icon="user">Profile</a>
+      <a href="#" data-nav="student-contact" data-icon="mail">Contact</a>
+    </nav>
+    <button id="studentLogoutBtn" class="sidebar-logout">Log out</button>
+  </aside>
+
+  <div class="app-main">
+    <header class="app-topbar">
+      <button id="studentSidebarToggle" class="sidebar-toggle" aria-label="Toggle menu">☰</button>
+      <h2 id="studentTopbarTitle">Dashboard</h2>
+      <div class="topbar-spacer"></div>
+    </header>
+
+    <div class="app-content">
+
+      <!-- Student Dashboard -->
+      <section id="studentSectionDashboard" class="content-section">
+        <div class="welcome-banner">
+          <img id="dashPhoto" class="avatar-lg" src="" alt="">
+          <div>
+            <h2 id="dashWelcome">Welcome back</h2>
+            <p id="dashSub" class="section-sub">Here's where things stand.</p>
+          </div>
+        </div>
+        <div class="stat-grid" id="studentStatGrid"></div>
+        <div class="content-grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Recent Results</h3></div>
+            <div id="dashRecentResults" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3>Announcements</h3></div>
+            <div id="dashAnnouncements" class="announcement-list"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Student Quizzes -->
+      <section id="studentSectionQuizzes" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Available Quizzes</h2>
+          <button class="btn btn-outline btn-sm" id="refreshQuizzesBtn">Refresh</button>
+        </div>
+        <div id="studentQuizGrid" class="quiz-grid"></div>
+      </section>
+
+      <!-- Quiz Attempt -->
+      <section id="studentSectionAttempt" class="content-section hidden">
+        <div class="quiz-attempt-layout">
+          <div class="quiz-attempt-main">
+            <div class="quiz-attempt-head">
+              <div>
+                <h2 id="attemptQuizName">Quiz</h2>
+                <p id="attemptStudentInfo" class="section-sub">—</p>
+              </div>
+              <div class="quiz-timer" id="attemptTimer">--:--</div>
+            </div>
+            <div class="mock-progress attempt-progress">
+              <div class="mock-progress-bar" id="attemptProgressBar" style="width:0%"></div>
+            </div>
+            <div class="panel question-panel">
+              <p class="question-index" id="attemptQuestionIndex">Question 1</p>
+              <p class="question-text" id="attemptQuestionText">—</p>
+              <div id="attemptOptions" class="attempt-options"></div>
+            </div>
+            <div class="quiz-attempt-actions">
+              <button class="btn btn-ghost" id="attemptPrevBtn">Previous</button>
+              <button class="btn btn-outline" id="attemptMarkBtn">Mark for Review</button>
+              <button class="btn btn-primary" id="attemptNextBtn">Next</button>
+              <button class="btn btn-success hidden" id="attemptSubmitBtn">Submit Quiz</button>
+            </div>
+          </div>
+          <aside class="question-palette-wrap">
+            <div class="panel">
+              <div class="panel-head"><h3>Question Palette</h3></div>
+              <div id="questionPalette" class="question-palette"></div>
+              <div class="palette-legend">
+                <span><i class="dot dot-answered"></i>Answered</span>
+                <span><i class="dot dot-unanswered"></i>Unanswered</span>
+                <span><i class="dot dot-review"></i>Marked for review</span>
+              </div>
+            </div>
+          </aside>
+        </div>
+      </section>
+
+      <!-- Results -->
+      <section id="studentSectionResults" class="content-section hidden">
+        <h2>Results</h2>
+        <div id="studentResultsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Quiz History -->
+      <section id="studentSectionHistory" class="content-section hidden">
+        <h2>Quiz History</h2>
+        <div id="studentHistoryTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Profile -->
+      <section id="studentSectionProfile" class="content-section hidden">
+        <h2>Profile</h2>
+        <form id="studentProfileForm" class="panel profile-form">
+          <div class="avatar-upload">
+            <img id="profilePhotoPreview" class="avatar-preview" src="" alt="">
+            <div>
+              <label class="btn btn-outline btn-sm" for="profilePhotoInput">Change photo</label>
+              <input type="file" id="profilePhotoInput" accept="image/*" class="hidden">
+            </div>
+          </div>
+          <label class="field">
+            <span>Full Name</span>
+            <input type="text" id="profileName" required>
+          </label>
+          <label class="field">
+            <span>Email</span>
+            <input type="email" id="profileEmail" disabled>
+          </label>
+          <label class="field">
+            <span>Class</span>
+            <input type="text" id="profileClass" required>
+          </label>
+          <label class="field">
+            <span>New Password <span class="field-hint">(leave blank to keep current)</span></span>
+            <input type="password" id="profilePassword" minlength="6">
+          </label>
+          <div id="profileFormMsg" class="form-success hidden"></div>
+          <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save Changes</button>
+        </form>
+      </section>
+
+      <!-- Contact -->
+      <section id="studentSectionContact" class="content-section hidden">
+        <h2>Contact with us</h2>
+        <div id="contactCardsStudent" class="contact-grid"></div>
+      </section>
+
+    </div>
+
+    <footer class="student-footer">
+      <p>Designed by <strong>Abdul Rehman Yousafzai</strong> &nbsp;·&nbsp; Mentor: <strong>Ahtisham Afzal</strong></p>
+    </footer>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ADMIN APP SHELL -->
+<!-- ============================================================ -->
+<div id="adminApp" class="app-shell hidden">
+  <aside class="sidebar sidebar-dark" id="adminSidebar">
+    <div class="sidebar-brand">
+      <span class="brand-mark">AQ</span>
+      <span class="brand-text">ARY Quize Bank</span>
+    </div>
+    <div class="sidebar-user">
+      <img id="adminSidebarPhoto" class="avatar-sm" src="" alt="">
+      <div>
+        <p id="adminSidebarName" class="sidebar-user-name">—</p>
+        <p id="adminSidebarRole" class="sidebar-user-sub">—</p>
+      </div>
+    </div>
+    <nav class="sidebar-nav" id="adminNav">
+      <a href="#" data-nav="admin-dashboard" data-perm="dashboard">Dashboard</a>
+      <a href="#" data-nav="admin-students" data-perm="students">Students</a>
+      <a href="#" data-nav="admin-quizzes" data-perm="quizzes">Quizzes</a>
+      <a href="#" data-nav="admin-review" data-perm="review">Quiz Review</a>
+      <a href="#" data-nav="admin-results" data-perm="results">Results</a>
+      <a href="#" data-nav="admin-analytics" data-perm="analytics">Analytics</a>
+      <a href="#" data-nav="admin-announcements" data-perm="announcements">Announcements</a>
+      <a href="#" data-nav="admin-contacts" data-perm="contacts">Contacts</a>
+      <a href="#" data-nav="admin-management" data-perm="admins">Admin Management</a>
+      <a href="#" data-nav="admin-profile" data-perm="profile">My Profile</a>
+    </nav>
+    <button id="adminLogoutBtn" class="sidebar-logout">Log out</button>
+  </aside>
+
+  <div class="app-main">
+    <header class="app-topbar">
+      <button id="adminSidebarToggle" class="sidebar-toggle" aria-label="Toggle menu">☰</button>
+      <h2 id="adminTopbarTitle">Dashboard</h2>
+      <div class="topbar-spacer"></div>
+      <img id="adminTopbarPhoto" class="avatar-sm" src="" alt="">
+    </header>
+
+    <div class="app-content">
+
+      <!-- Admin Dashboard -->
+      <section id="adminSectionDashboard" class="content-section">
+        <h2>Overview</h2>
+        <div class="stat-grid" id="adminStatGrid"></div>
+        <div class="content-grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Recent Results</h3></div>
+            <div id="adminRecentActivity" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3>Pending Students</h3></div>
+            <div id="adminPendingPreview" class="table-wrap"></div>
+          </div>
+        </div>
+      </section>
+
+      <!-- Students -->
+      <section id="adminSectionStudents" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Students</h2>
+          <input type="search" id="studentSearchInput" class="search-input" placeholder="Search by name, email, or class">
+        </div>
+        <div class="filter-row" id="studentStatusFilter">
+          <button class="chip is-active" data-filter="All">All</button>
+          <button class="chip" data-filter="Pending">Pending</button>
+          <button class="chip" data-filter="Approved">Approved</button>
+          <button class="chip" data-filter="Rejected">Rejected</button>
+          <button class="chip" data-filter="Deactivated">Deactivated</button>
+        </div>
+        <div id="adminStudentsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Quizzes -->
+      <section id="adminSectionQuizzes" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Quizzes</h2>
+          <div class="row-actions">
+            <button class="btn btn-outline btn-sm" id="refreshAdminQuizzesBtn">Refresh</button>
+            <button class="btn btn-primary btn-sm" id="newQuizBtn">+ Add Quiz</button>
+          </div>
+        </div>
+        <div id="adminQuizzesTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Quiz Review (workflow) -->
+      <section id="adminSectionReview" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Quiz Review</h2>
+          <button class="btn btn-outline btn-sm" id="refreshReviewBtn">Refresh</button>
+        </div>
+        <p class="section-sub">Move each quiz through Draft → Under Review → Approved → Published, or send it back with Request Changes / Reject. Only Published, unexpired quizzes are visible to students.</p>
+        <div id="adminReviewTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Results -->
+      <section id="adminSectionResults" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Results</h2>
+          <input type="search" id="resultsSearchInput" class="search-input" placeholder="Search student or quiz">
+        </div>
+        <div id="adminResultsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Analytics -->
+      <section id="adminSectionAnalytics" class="content-section hidden">
+        <h2>Analytics</h2>
+        <div class="content-grid-2">
+          <div class="panel">
+            <div class="panel-head"><h3>Class Performance</h3></div>
+            <div id="classAnalyticsTable" class="table-wrap"></div>
+          </div>
+          <div class="panel">
+            <div class="panel-head"><h3>Quiz Performance</h3></div>
+            <div id="quizAnalyticsTable" class="table-wrap"></div>
+          </div>
+        </div>
+        <div class="panel">
+          <div class="panel-head"><h3>Top Performing Students</h3></div>
+          <div id="topStudentsTable" class="table-wrap"></div>
+        </div>
+        <div class="notice-box">
+          "Weak areas" (topic-level breakdowns) aren't shown because quiz tabs don't currently
+          store a topic/category per question. Add a <code>Topic</code> column to quiz tabs and
+          include it in <code>getQuizQuestions</code>/<code>submitQuiz</code> scoring to enable this.
+        </div>
+      </section>
+
+      <!-- Announcements -->
+      <section id="adminSectionAnnouncements" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Announcements</h2>
+          <button class="btn btn-primary btn-sm" id="newAnnouncementBtn">New Announcement</button>
+        </div>
+        <div id="adminAnnouncementsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Contacts -->
+      <section id="adminSectionContacts" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Contacts</h2>
+          <button class="btn btn-primary btn-sm" id="newContactBtn">Add Contact</button>
+        </div>
+        <p class="section-sub">These cards are shown on the public Contact page and to logged-in students.</p>
+        <div id="adminContactsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Admin Management -->
+      <section id="adminSectionAdmins" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Admin Management</h2>
+          <button class="btn btn-primary btn-sm" id="newAdminBtn">Add Admin</button>
+        </div>
+        <p class="section-sub">Only Super Admins can see this section. New admins stay Pending until approved.</p>
+        <div id="adminManagementTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Admin Profile -->
+      <section id="adminSectionProfile" class="content-section hidden">
+        <h2>My Profile</h2>
+        <form id="adminProfileForm" class="panel profile-form">
+          <div class="avatar-upload">
+            <img id="adminProfilePhotoPreview" class="avatar-preview" src="" alt="">
+            <div>
+              <label class="btn btn-outline btn-sm" for="adminProfilePhotoInput">Change photo</label>
+              <input type="file" id="adminProfilePhotoInput" accept="image/*" class="hidden">
+            </div>
+          </div>
+          <label class="field">
+            <span>Name</span>
+            <input type="text" id="adminProfileName" required>
+          </label>
+          <label class="field">
+            <span>Email <span class="field-hint">(fixed)</span></span>
+            <input type="email" id="adminProfileEmail" disabled>
+          </label>
+          <label class="field">
+            <span>Role <span class="field-hint">(fixed)</span></span>
+            <input type="text" id="adminProfileRole" disabled>
+          </label>
+          <label class="field">
+            <span>New Password <span class="field-hint">(leave blank to keep current)</span></span>
+            <input type="password" id="adminProfilePassword" minlength="6">
+          </label>
+          <div id="adminProfileFormMsg" class="form-success hidden"></div>
+          <button type="submit" class="btn btn-primary" id="adminProfileSaveBtn">Save Changes</button>
+        </form>
+      </section>
+
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ANNOUNCEMENT EDITOR MODAL -->
+<!-- ============================================================ -->
+<div id="announcementModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="announcementModalTitle">New Announcement</h3>
+    <form id="announcementForm">
+      <input type="hidden" id="announcementId">
+      <label class="field">
+        <span>Title</span>
+        <input type="text" id="announcementTitle" required>
+      </label>
+      <label class="field">
+        <span>Message</span>
+        <textarea id="announcementMessage" rows="4" required></textarea>
+      </label>
+      <label class="field">
+        <span>Status</span>
+        <select id="announcementStatus">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="announcementCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="announcementSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- QUIZ SETTINGS MODAL -->
+<!-- ============================================================ -->
+<div id="quizSettingsModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>Quiz Settings — <span id="quizSettingsName"></span></h3>
+    <form id="quizSettingsForm">
+      <label class="field">
+        <span>Duration (minutes)</span>
+        <input type="number" id="quizDuration" min="1" required>
+      </label>
+      <label class="field">
+        <span>Quiz Type</span>
+        <select id="quizType">
+          <option value="Regular">Regular</option>
+          <option value="Mock">Mock</option>
+        </select>
+      </label>
+      <label class="field-inline">
+        <input type="checkbox" id="quizAllowMultiple">
+        <span>Allow multiple attempts</span>
+      </label>
+      <label class="field-inline">
+        <input type="checkbox" id="quizRandomizeQ">
+        <span>Randomize question order</span>
+      </label>
+      <label class="field-inline">
+        <input type="checkbox" id="quizRandomizeO">
+        <span>Randomize option order</span>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Expiry Date</span>
+          <input type="date" id="quizExpiryDate">
+        </label>
+        <label class="field">
+          <span>Expiry Time</span>
+          <input type="time" id="quizExpiryTime">
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="quizSettingsCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="quizSettingsSaveBtn">Save Settings</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ADD QUIZ / ADD QUESTIONS MODAL -->
+<!-- ============================================================ -->
+<div id="addQuizModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="addQuizModalTitle">Add Quiz</h3>
+    <form id="addQuizForm">
+      <label class="field" id="addQuizNameField">
+        <span>Quiz Name</span>
+        <input type="text" id="addQuizName" placeholder="e.g. Physics Chapter 1" required>
+      </label>
+      <label class="field">
+        <span>Questions</span>
+        <textarea id="addQuizQuestionsText" rows="10" placeholder="Paste directly from Google Sheets / Excel — select the Question, Option A-D, Correct Answer columns and Ctrl+C, Ctrl+V here." required></textarea>
+      </label>
+      <p class="field-hint">Easiest way: in your Google Sheet, select the 6 columns (Question, Option A, Option B, Option C, Option D, Correct Answer) for all your questions, <strong>Ctrl+C</strong>, then <strong>Ctrl+V</strong> directly into the box above — it pastes correctly on its own.<br>
+        Correct Answer column can be either the letter (A/B/C/D) or the full answer text — both work.</p>
+      <div id="addQuizError" class="form-error hidden"></div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="addQuizCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="addQuizSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- QUIZ RESULT MODAL -->
+<!-- ============================================================ -->
+<div id="resultModal" class="modal-backdrop hidden">
+  <div class="modal modal-result">
+    <div class="result-ring-wrap">
+      <svg viewBox="0 0 120 120" class="result-ring">
+        <circle cx="60" cy="60" r="52" class="result-ring-track"></circle>
+        <circle cx="60" cy="60" r="52" class="result-ring-fill" id="resultRingFill"></circle>
+      </svg>
+      <div class="result-ring-label">
+        <span id="resultPercentage">0%</span>
+      </div>
+    </div>
+    <h3 id="resultQuizName">Quiz Complete</h3>
+    <div class="result-stat-row">
+      <div><span id="resultScore">0</span><label>Score</label></div>
+      <div><span id="resultCorrect">0</span><label>Correct</label></div>
+      <div><span id="resultWrong">0</span><label>Wrong</label></div>
+      <div><span id="resultTotal">0</span><label>Total</label></div>
+    </div>
+    <p class="result-meta" id="resultMeta">—</p>
+    <div class="modal-actions">
+      <button class="btn btn-primary btn-block" id="resultCloseBtn">Back to Dashboard</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- CONTACT EDITOR MODAL -->
+<!-- ============================================================ -->
+<div id="contactModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="contactModalTitle">New Contact</h3>
+    <form id="contactForm">
+      <input type="hidden" id="contactId">
+      <label class="field">
+        <span>Name</span>
+        <input type="text" id="contactName" required>
+      </label>
+      <label class="field">
+        <span>Role</span>
+        <input type="text" id="contactRole" placeholder="e.g. Mentor, Designer, Admin">
+      </label>
+      <label class="field">
+        <span>Phone</span>
+        <input type="tel" id="contactPhone" placeholder="+92 300 0000000">
+      </label>
+      <label class="field">
+        <span>WhatsApp Number <span class="field-hint">(digits only, with country code)</span></span>
+        <input type="text" id="contactWhatsapp" placeholder="923000000000">
+      </label>
+      <label class="field">
+        <span>Email</span>
+        <input type="email" id="contactEmail">
+      </label>
+      <label class="field">
+        <span>Status</span>
+        <select id="contactStatus">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="contactCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="contactSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- ADMIN EDITOR MODAL (create + permissions) -->
+<!-- ============================================================ -->
+<div id="adminEditModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="adminEditModalTitle">Add Admin</h3>
+    <form id="adminEditForm">
+      <input type="hidden" id="adminEditId">
+      <label class="field" id="adminEditNameField">
+        <span>Name</span>
+        <input type="text" id="adminEditName" required>
+      </label>
+      <label class="field" id="adminEditEmailField">
+        <span>Email</span>
+        <input type="email" id="adminEditEmail" required>
+      </label>
+      <label class="field" id="adminEditPasswordField">
+        <span>Password</span>
+        <input type="password" id="adminEditPassword" minlength="6">
+      </label>
+      <label class="field">
+        <span>Role</span>
+        <select id="adminEditRole">
+          <option value="Admin">Admin</option>
+          <option value="SuperAdmin">Super Admin</option>
+        </select>
+      </label>
+      <div class="field">
+        <span>Permissions</span>
+        <div class="permissions-grid">
+          <label class="field-inline"><input type="checkbox" value="students" class="perm-check"><span>Student Management</span></label>
+          <label class="field-inline"><input type="checkbox" value="quizzes" class="perm-check"><span>Quiz Management</span></label>
+          <label class="field-inline"><input type="checkbox" value="review" class="perm-check"><span>Quiz Review</span></label>
+          <label class="field-inline"><input type="checkbox" value="results" class="perm-check"><span>Results Access</span></label>
+          <label class="field-inline"><input type="checkbox" value="analytics" class="perm-check"><span>Analytics Access</span></label>
+          <label class="field-inline"><input type="checkbox" value="announcements" class="perm-check"><span>Announcement Management</span></label>
+          <label class="field-inline"><input type="checkbox" value="contacts" class="perm-check"><span>Contact Management</span></label>
+          <label class="field-inline"><input type="checkbox" value="admins" class="perm-check"><span>Admin Management</span></label>
+        </div>
+        <p class="field-hint">Ignored for Super Admins, who always have full access.</p>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="adminEditCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="adminEditSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<script type="module" src="script.js"></script>
+</body>
+</html>
