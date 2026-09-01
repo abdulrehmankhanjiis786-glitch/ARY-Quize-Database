@@ -1,16 +1,32 @@
 /* ============================================================================
    ARY QUIZE BANK — FRONTEND LOGIC
-   Talks ONLY to the existing deployed Google Apps Script backend below.
-   No Code.gs is created or modified here.
+   Backed directly by Firebase Realtime Database (no Apps Script backend).
+   Every function below reproduces the exact behaviour of the original
+   Code.gs actions, 1:1, against Firebase instead of Google Sheets.
    ============================================================================ */
 
-const API_URL = "https://script.google.com/macros/s/AKfycbwUyx6Cka3OOdUlM8d1fIAG-Y5yrAREbnmdMVu51p57ceEdLQavqApagQjTIzt9s0wZ/exec";
+import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
+import {
+  getDatabase, ref, get, set, update, remove
+} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
+
+const firebaseConfig = {
+  apiKey: "AIzaSyBehFk5dWZL5_RLjmUqEnTnt1bBrsFG3sQ",
+  authDomain: "ary-quiize-bank-data.firebaseapp.com",
+  databaseURL: "https://ary-quiize-bank-data-default-rtdb.asia-southeast1.firebasedatabase.app",
+  projectId: "ary-quiize-bank-data",
+  storageBucket: "ary-quiize-bank-data.firebasestorage.app",
+  messagingSenderId: "924736650507",
+  appId: "1:924736650507:web:a8d424ce9d5a4963d9b60e"
+};
+
+const fbApp = initializeApp(firebaseConfig);
+const db = getDatabase(fbApp);
 
 /* ----------------------------------------------------------------------------
    API ACTION MAP
-   Every action below exists in the deployed Code.gs and is safe to call.
-   Actions marked BACKEND ACTION REQUIRED do NOT exist yet — any UI that would
-   need them shows an explanatory notice instead of pretending to work.
+   Kept for compatibility — every call site in this file uses API_ACTIONS.xxx,
+   and the strings match the handler keys in ACTION_HANDLERS below.
 ---------------------------------------------------------------------------- */
 const API_ACTIONS = {
   // Student
@@ -60,27 +76,841 @@ const API_ACTIONS = {
   setAdminStatus: 'setAdminStatus',
   updateAdminPermissions: 'updateAdminPermissions',
   removeAdmin: 'removeAdmin',
-  updateAdminProfile: 'updateAdminProfile'
+  updateAdminProfile: 'updateAdminProfile',
+  // Quiz creation from the Admin panel (new — no Firebase console needed)
+  createQuiz: 'createQuiz',
+  addQuizQuestions: 'addQuizQuestions'
 };
 
 /* ----------------------------------------------------------------------------
-   CORE API HELPER
-   Uses text/plain to avoid a CORS preflight against Apps Script, which only
-   reads e.postData.contents as JSON regardless of the declared content type.
+   LOW-LEVEL DB HELPERS
 ---------------------------------------------------------------------------- */
+async function dbGetAll(path) {
+  const snap = await get(ref(db, path));
+  return snap.exists() ? snap.val() : {};
+}
+async function dbGetOne(path) {
+  const snap = await get(ref(db, path));
+  return snap.exists() ? snap.val() : null;
+}
+async function dbSet(path, value) { await set(ref(db, path), value); }
+async function dbUpdate(path, value) { await update(ref(db, path), value); }
+async function dbRemove(path) { await remove(ref(db, path)); }
+
+function objToArray(obj) {
+  if (!obj) return [];
+  return Object.keys(obj).map((k) => ({ ...obj[k], _key: k }));
+}
+function stripKey(obj) { const c = { ...obj }; delete c._key; return c; }
+
+/* ----------------------------------------------------------------------------
+   GENERIC HELPERS (ported 1:1 from Code.gs)
+---------------------------------------------------------------------------- */
+function resp(success, message, data) {
+  return { success, message: message || '', data: data !== undefined ? data : {} };
+}
+function isEmpty(v) { return v === undefined || v === null || String(v).trim() === ''; }
+function validateRequired(params, fields) {
+  const missing = [];
+  for (const f of fields) if (isEmpty(params[f])) missing.push(f);
+  return missing;
+}
+function generateId(prefix) {
+  const stamp = Date.now().toString(36).toUpperCase();
+  const rand = Math.floor(Math.random() * 46656).toString(36).toUpperCase();
+  return prefix + '-' + stamp + rand;
+}
+function toKey(str) { return String(str).trim().replace(/[.#$[\]]/g, '_'); }
+function formatDate(d) {
+  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
+}
+function formatTime(d) {
+  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
+}
+function shuffleArray(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+const REVIEW_STATUSES = ['Draft', 'UnderReview', 'ChangesRequired', 'Approved', 'Published', 'Rejected'];
+
+/* ----------------------------------------------------------------------------
+   QUIZ TAB DETECTION + QuizSettings MANAGEMENT
+   In the Sheets version, any non-system sheet tab was an auto-detected quiz.
+   Here, any node under /quizzes/{quizKey} is an auto-detected quiz — add
+   quizzes and their questions directly in the Firebase console, the same
+   way you used to add a new sheet tab.
+   Shape:  /quizzes/{quizKey} = { name: "Quiz Name", questions: [
+             { Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswer }, ...
+           ] }
+---------------------------------------------------------------------------- */
+async function syncQuizSettingsWithTabs() {
+  const quizzes = await dbGetAll('quizzes');
+  const keys = Object.keys(quizzes);
+  const settings = await dbGetAll('quizSettings');
+  const updates = {};
+  for (const key of keys) {
+    if (!settings[key]) {
+      const name = (quizzes[key] && quizzes[key].name) ? quizzes[key].name : key;
+      updates[key] = {
+        QuizName: name, Active: false, ExpiryDate: '', ExpiryTime: '', DurationMinutes: 30,
+        AllowMultipleAttempts: false, QuizType: 'Regular', RandomizeQuestions: false, RandomizeOptions: false,
+        CreatedDate: formatDate(new Date()), ReviewStatus: 'Draft', ReviewNote: ''
+      };
+    }
+  }
+  if (Object.keys(updates).length) await dbUpdate('quizSettings', updates);
+  return keys.map((k) => ({ key: k, name: (quizzes[k] && quizzes[k].name) ? quizzes[k].name : k }));
+}
+
+async function findQuizByName(quizName) {
+  const list = await syncQuizSettingsWithTabs();
+  const found = list.find((q) => q.name === quizName);
+  return found ? found.key : toKey(quizName);
+}
+
+function getEffectiveReviewStatus(settingsRow) {
+  if (!isEmpty(settingsRow.ReviewStatus)) return settingsRow.ReviewStatus;
+  const active = settingsRow.Active === true || String(settingsRow.Active).toUpperCase() === 'TRUE';
+  return active ? 'Published' : 'Draft';
+}
+function isQuizExpired(settingsRow) {
+  if (!settingsRow || isEmpty(settingsRow.ExpiryDate)) return false;
+  const timeStr = isEmpty(settingsRow.ExpiryTime) ? '23:59:59' : settingsRow.ExpiryTime;
+  const expiryDateTime = new Date(settingsRow.ExpiryDate + 'T' + timeStr);
+  if (isNaN(expiryDateTime.getTime())) return false;
+  return Date.now() > expiryDateTime.getTime();
+}
+async function getQuizQuestionsFull(quizKey) {
+  const quiz = await dbGetOne('quizzes/' + quizKey);
+  if (!quiz) return null;
+  const list = Array.isArray(quiz.questions) ? quiz.questions : (quiz.questions ? Object.values(quiz.questions) : []);
+  const out = [];
+  list.forEach((r, i) => {
+    if (!r || isEmpty(r.Question)) return;
+    out.push({
+      index: i, question: r.Question, optionA: r.OptionA, optionB: r.OptionB, optionC: r.OptionC, optionD: r.OptionD,
+      correctAnswer: String(r.CorrectAnswer).trim().toUpperCase()
+    });
+  });
+  return out;
+}
+async function quizQuestionCount(quizKey) {
+  const quiz = await dbGetOne('quizzes/' + quizKey);
+  const list = quiz && quiz.questions ? (Array.isArray(quiz.questions) ? quiz.questions : Object.values(quiz.questions)) : [];
+  return list.filter((x) => x && !isEmpty(x.Question)).length;
+}
+
+/* ----------------------------------------------------------------------------
+   STUDENT APIs
+---------------------------------------------------------------------------- */
+async function getAllStudents() { return objToArray(await dbGetAll('students')); }
+
+async function apiRegisterStudent(p) {
+  const missing = validateRequired(p, ['name', 'email', 'password']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const students = await getAllStudents();
+  if (students.some((s) => String(s.Email).toLowerCase() === String(p.email).toLowerCase())) {
+    return resp(false, 'An account with this email already exists.');
+  }
+  const studentId = generateId('STU');
+  const row = {
+    StudentID: studentId, Name: p.name, Email: p.email, Password: p.password,
+    Class: p.class || '', Photo: p.photo || '', Status: 'Pending', RegistrationDate: formatDate(new Date())
+  };
+  await dbSet('students/' + studentId, row);
+  return resp(true, 'Registration submitted. Waiting for admin approval.', { studentId });
+}
+
+async function apiStudentLogin(p) {
+  const missing = validateRequired(p, ['email', 'password']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const students = await getAllStudents();
+  const r = students.find((s) => String(s.Email).toLowerCase() === String(p.email).toLowerCase());
+  if (!r) return resp(false, 'No account found with this email.');
+  if (String(r.Password) !== String(p.password)) return resp(false, 'Incorrect password.');
+  if (r.Status !== 'Approved') return resp(false, `Your account status is "${r.Status}". Only approved students can log in.`);
+  return resp(true, 'Login successful.', { studentId: r.StudentID, name: r.Name, email: r.Email, className: r.Class, photo: r.Photo, status: r.Status });
+}
+
+async function apiStudentLogout() { return resp(true, 'Logged out.'); }
+
+async function apiGetStudentProfile(p) {
+  const missing = validateRequired(p, ['studentId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const r = await dbGetOne('students/' + p.studentId);
+  if (!r) return resp(false, 'Student not found.');
+  return resp(true, 'OK', { studentId: r.StudentID, name: r.Name, email: r.Email, className: r.Class, photo: r.Photo, status: r.Status, registrationDate: r.RegistrationDate });
+}
+
+async function apiUpdateStudentProfile(p) {
+  const missing = validateRequired(p, ['studentId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const existing = await dbGetOne('students/' + p.studentId);
+  if (!existing) return resp(false, 'Student not found.');
+  const updates = {};
+  if (!isEmpty(p.name)) updates.Name = p.name;
+  if (!isEmpty(p.class)) updates.Class = p.class;
+  if (!isEmpty(p.photo)) updates.Photo = p.photo;
+  if (!isEmpty(p.password)) updates.Password = p.password;
+  await dbUpdate('students/' + p.studentId, updates);
+  return resp(true, 'Profile updated.');
+}
+
+async function apiGetQuizzes() {
+  const list = await syncQuizSettingsWithTabs();
+  const out = [];
+  for (const q of list) {
+    const settings = await dbGetOne('quizSettings/' + q.key);
+    if (!settings) continue;
+    const published = getEffectiveReviewStatus(settings) === 'Published';
+    const expired = isQuizExpired(settings);
+    if (!published || expired) continue;
+    const questionCount = await quizQuestionCount(q.key);
+    out.push({
+      quizName: settings.QuizName, quizType: settings.QuizType || 'Regular', durationMinutes: settings.DurationMinutes || 30,
+      allowMultipleAttempts: settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE',
+      expiryDate: settings.ExpiryDate || '', expiryTime: settings.ExpiryTime || '', questionCount
+    });
+  }
+  return resp(true, 'OK', { quizzes: out });
+}
+
+async function studentHasAttempted(studentId, quizName) {
+  const results = objToArray(await dbGetAll('results'));
+  return results.some((r) => r.StudentID === studentId && r.QuizName === quizName);
+}
+
+async function apiGetQuizQuestions(p) {
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const settings = await dbGetOne('quizSettings/' + key);
+  if (!settings) return resp(false, 'Quiz not found.');
+  if (getEffectiveReviewStatus(settings) !== 'Published') return resp(false, 'This quiz is not currently published.');
+  if (isQuizExpired(settings)) return resp(false, 'This quiz has expired.');
+
+  const allowMultiple = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
+  if (!allowMultiple && !isEmpty(p.studentId) && await studentHasAttempted(p.studentId, settings.QuizName)) {
+    return resp(false, 'You have already attempted this quiz.');
+  }
+
+  const full = await getQuizQuestionsFull(key);
+  if (full === null) return resp(false, 'Quiz tab not found.');
+
+  const randomizeQ = settings.RandomizeQuestions === true || String(settings.RandomizeQuestions).toUpperCase() === 'TRUE';
+  const randomizeO = settings.RandomizeOptions === true || String(settings.RandomizeOptions).toUpperCase() === 'TRUE';
+
+  let order = full.map((q) => q.index);
+  if (randomizeQ) order = shuffleArray(order);
+
+  const studentQuestions = order.map((idx) => {
+    const q = full.find((f) => f.index === idx);
+    let options = [{ key: 'A', text: q.optionA }, { key: 'B', text: q.optionB }, { key: 'C', text: q.optionC }, { key: 'D', text: q.optionD }];
+    if (randomizeO) options = shuffleArray(options);
+    return { questionIndex: q.index, question: q.question, options };
+  });
+
+  return resp(true, 'OK', {
+    quizName: settings.QuizName, durationMinutes: settings.DurationMinutes || 30, quizType: settings.QuizType || 'Regular',
+    totalQuestions: studentQuestions.length, questions: studentQuestions
+  });
+}
+
+async function apiSubmitQuiz(p) {
+  const missing = validateRequired(p, ['studentId', 'quizName', 'answers']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+
+  const key = await findQuizByName(p.quizName);
+  const settings = await dbGetOne('quizSettings/' + key);
+  if (!settings) return resp(false, 'Quiz not found.');
+
+  const allowMultiple = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
+  if (!allowMultiple && await studentHasAttempted(p.studentId, settings.QuizName)) return resp(false, 'You have already attempted this quiz.');
+
+  const full = await getQuizQuestionsFull(key);
+  if (full === null) return resp(false, 'Quiz tab not found.');
+
+  const answers = typeof p.answers === 'string' ? JSON.parse(p.answers) : p.answers;
+  const answerMap = {};
+  answers.forEach((a) => { answerMap[a.questionIndex] = String(a.selected || '').trim().toUpperCase(); });
+
+  let correctCount = 0, wrongCount = 0;
+  full.forEach((q) => {
+    const given = answerMap.hasOwnProperty(q.index) ? answerMap[q.index] : '';
+    if (given && given === q.correctAnswer) correctCount++; else wrongCount++;
+  });
+
+  const total = full.length;
+  const percentage = total > 0 ? Math.round((correctCount / total) * 10000) / 100 : 0;
+
+  const student = await dbGetOne('students/' + p.studentId);
+  const studentName = student ? student.Name : (p.studentName || 'Unknown');
+
+  const resultId = generateId('RES');
+  const now = new Date();
+  const row = {
+    ResultID: resultId, StudentID: p.studentId, StudentName: studentName, QuizName: settings.QuizName,
+    Score: correctCount, TotalQuestions: total, Percentage: percentage, CorrectAnswers: correctCount,
+    WrongAnswers: wrongCount, Date: formatDate(now), Time: formatTime(now)
+  };
+  await dbSet('results/' + resultId, row);
+
+  return resp(true, 'Quiz submitted successfully.', {
+    resultId, score: correctCount, totalQuestions: total, percentage, correctAnswers: correctCount, wrongAnswers: wrongCount
+  });
+}
+
+async function apiGetStudentResults(p) {
+  const missing = validateRequired(p, ['studentId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const results = objToArray(await dbGetAll('results'));
+  const out = results.filter((r) => r.StudentID === p.studentId).map(stripKey);
+  return resp(true, 'OK', { results: out });
+}
+
+async function apiGetStudentDashboard(p) {
+  const missing = validateRequired(p, ['studentId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+
+  const results = objToArray(await dbGetAll('results'));
+  const mine = results.filter((r) => r.StudentID === p.studentId);
+
+  let totalPercentage = 0, best = null;
+  mine.forEach((r) => {
+    totalPercentage += Number(r.Percentage) || 0;
+    if (best === null || Number(r.Percentage) > Number(best.Percentage)) best = r;
+  });
+  const quizzesTaken = mine.length;
+  const avgPercentage = quizzesTaken > 0 ? Math.round((totalPercentage / quizzesTaken) * 100) / 100 : 0;
+
+  const availableResp = await apiGetQuizzes();
+  const availableQuizCount = availableResp.data.quizzes.length;
+
+  return resp(true, 'OK', {
+    quizzesTaken, averagePercentage: avgPercentage, bestResult: best ? stripKey(best) : null,
+    availableQuizzes: availableQuizCount, recentResults: mine.slice(-5).reverse().map(stripKey)
+  });
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN AUTH
+---------------------------------------------------------------------------- */
+async function getAllAdmins() { return objToArray(await dbGetAll('admins')); }
+
+async function apiAdminLogin(p) {
+  const missing = validateRequired(p, ['email', 'password']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const admins = await getAllAdmins();
+  const r = admins.find((a) => String(a.Email).toLowerCase() === String(p.email).toLowerCase());
+  if (!r) return resp(false, 'No admin account found with this email.');
+  if (String(r.Password) !== String(p.password)) return resp(false, 'Incorrect password.');
+  const status = String(r.Status || '').toLowerCase();
+  if (status === 'inactive') return resp(false, 'This admin account is inactive.');
+  if (status === 'pending') return resp(false, 'This admin account is awaiting Super Admin approval.');
+  if (status === 'rejected') return resp(false, 'This admin account was rejected.');
+  return resp(true, 'Login successful.', { adminId: r.AdminID, name: r.Name, email: r.Email, role: r.Role, photo: r.Photo || '', permissions: r.Permissions || '' });
+}
+
+async function requireAdmin(p) {
+  if (isEmpty(p.adminEmail) || isEmpty(p.adminPassword)) return { ok: false, response: resp(false, 'Admin credentials required.') };
+  const admins = await getAllAdmins();
+  const r = admins.find((a) => String(a.Email).toLowerCase() === String(p.adminEmail).toLowerCase() && String(a.Password) === String(p.adminPassword));
+  if (!r) return { ok: false, response: resp(false, 'Unauthorized: invalid admin credentials.') };
+  const status = String(r.Status || '').toLowerCase();
+  if (status === 'inactive') return { ok: false, response: resp(false, 'This admin account is inactive.') };
+  if (status === 'pending') return { ok: false, response: resp(false, 'This admin account is awaiting approval.') };
+  if (status === 'rejected') return { ok: false, response: resp(false, 'This admin account was rejected.') };
+  return { ok: true, admin: r };
+}
+
+async function requireSuperAdmin(p) {
+  const auth = await requireAdmin(p);
+  if (!auth.ok) return auth;
+  if (String(auth.admin.Role || '').toLowerCase().indexOf('super') === -1) {
+    return { ok: false, response: resp(false, 'Unauthorized: Super Admin access required.') };
+  }
+  return auth;
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN: STUDENTS
+---------------------------------------------------------------------------- */
+async function apiGetStudents(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const students = await getAllStudents();
+  const out = students.map((s) => { const c = stripKey(s); delete c.Password; return c; });
+  return resp(true, 'OK', { students: out });
+}
+
+async function setStudentStatusInternal(studentId, status) {
+  if (isEmpty(studentId)) return resp(false, 'studentId is required.');
+  const existing = await dbGetOne('students/' + studentId);
+  if (!existing) return resp(false, 'Student not found.');
+  await dbUpdate('students/' + studentId, { Status: status });
+  return resp(true, `Student status updated to "${status}".`);
+}
+async function apiApproveStudent(p) { const auth = await requireAdmin(p); if (!auth.ok) return auth.response; return setStudentStatusInternal(p.studentId, 'Approved'); }
+async function apiRejectStudent(p) { const auth = await requireAdmin(p); if (!auth.ok) return auth.response; return setStudentStatusInternal(p.studentId, 'Rejected'); }
+async function apiSetStudentStatus(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['studentId', 'status']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  return setStudentStatusInternal(p.studentId, p.status);
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN: QUIZZES + REVIEW WORKFLOW
+---------------------------------------------------------------------------- */
+async function apiGetAllQuizzesAdmin(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const list = await syncQuizSettingsWithTabs();
+  const out = [];
+  for (const q of list) {
+    const settings = await dbGetOne('quizSettings/' + q.key);
+    const questionCount = await quizQuestionCount(q.key);
+    out.push({ ...settings, questionCount, expired: isQuizExpired(settings), EffectiveReviewStatus: getEffectiveReviewStatus(settings) });
+  }
+  return resp(true, 'OK', { quizzes: out });
+}
+
+async function apiSetQuizActive(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  const active = (p.active === true || String(p.active).toUpperCase() === 'TRUE');
+  await dbUpdate('quizSettings/' + key, { Active: active, ReviewStatus: active ? 'Published' : 'Approved' });
+  return resp(true, active ? 'Quiz published.' : 'Quiz unpublished.');
+}
+
+async function apiSetQuizExpiry(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  const updates = {};
+  if (!isEmpty(p.expiryDate)) updates.ExpiryDate = p.expiryDate;
+  if (!isEmpty(p.expiryTime)) updates.ExpiryTime = p.expiryTime;
+  await dbUpdate('quizSettings/' + key, updates);
+  return resp(true, 'Quiz expiry updated.');
+}
+
+async function apiUpdateQuizSettings(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  const editable = ['Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions'];
+  const updates = {};
+  editable.forEach((h) => {
+    const paramKey = h.charAt(0).toLowerCase() + h.slice(1);
+    if (!isEmpty(p[paramKey])) updates[h] = p[paramKey];
+  });
+  if (Object.keys(updates).length) await dbUpdate('quizSettings/' + key, updates);
+  return resp(true, 'Quiz settings updated.');
+}
+
+async function apiReviewQuiz(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName', 'reviewStatus']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  if (REVIEW_STATUSES.indexOf(p.reviewStatus) === -1) return resp(false, 'Invalid reviewStatus. Must be one of: ' + REVIEW_STATUSES.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  const updates = { ReviewStatus: p.reviewStatus, Active: p.reviewStatus === 'Published' };
+  if (!isEmpty(p.reviewNote)) updates.ReviewNote = p.reviewNote;
+  await dbUpdate('quizSettings/' + key, updates);
+  return resp(true, `Quiz status set to "${p.reviewStatus}".`);
+}
+
+async function apiPublishQuiz(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  await dbUpdate('quizSettings/' + key, { ReviewStatus: 'Published', Active: true });
+  return resp(true, 'Quiz published. Students can now see it.');
+}
+
+async function apiUnpublishQuiz(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  await dbUpdate('quizSettings/' + key, { ReviewStatus: 'Approved', Active: false });
+  return resp(true, 'Quiz unpublished. It is hidden from students but keeps its Approved status.');
+}
+
+async function apiRequestChanges(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const existing = await dbGetOne('quizSettings/' + key);
+  if (!existing) return resp(false, 'Quiz not found.');
+  await dbUpdate('quizSettings/' + key, { ReviewStatus: 'ChangesRequired', Active: false, ReviewNote: p.reviewNote || '' });
+  return resp(true, 'Changes requested.');
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN: RESULTS + ANALYTICS
+---------------------------------------------------------------------------- */
+async function apiGetAllResults(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const results = objToArray(await dbGetAll('results')).map(stripKey);
+  return resp(true, 'OK', { results });
+}
+
+async function apiSearchStudentResults(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['query']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const q = String(p.query).toLowerCase();
+  const results = objToArray(await dbGetAll('results'));
+  const out = results.filter((r) => (String(r.StudentName) + ' ' + String(r.StudentID) + ' ' + String(r.QuizName)).toLowerCase().indexOf(q) !== -1).map(stripKey);
+  return resp(true, 'OK', { results: out });
+}
+
+async function apiGetClassAnalytics(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const students = await getAllStudents();
+  const results = objToArray(await dbGetAll('results'));
+  const studentClassMap = {}, classCounts = {};
+  students.forEach((s) => {
+    const cls = s.Class || 'Unassigned';
+    studentClassMap[s.StudentID] = cls;
+    classCounts[cls] = (classCounts[cls] || 0) + 1;
+  });
+  const classStats = {};
+  results.forEach((r) => {
+    const cls = studentClassMap[r.StudentID] || 'Unassigned';
+    if (!classStats[cls]) classStats[cls] = { attempts: 0, totalPct: 0, high: -Infinity, low: Infinity };
+    const pct = Number(r.Percentage) || 0;
+    classStats[cls].attempts++; classStats[cls].totalPct += pct;
+    classStats[cls].high = Math.max(classStats[cls].high, pct);
+    classStats[cls].low = Math.min(classStats[cls].low, pct);
+  });
+  const out = [];
+  for (const cls in classCounts) {
+    const stat = classStats[cls];
+    out.push({
+      className: cls, totalStudents: classCounts[cls], totalAttempts: stat ? stat.attempts : 0,
+      averagePercentage: stat && stat.attempts > 0 ? Math.round((stat.totalPct / stat.attempts) * 100) / 100 : 0,
+      highestPercentage: stat && stat.attempts > 0 ? stat.high : 0, lowestPercentage: stat && stat.attempts > 0 ? stat.low : 0
+    });
+  }
+  return resp(true, 'OK', { classAnalytics: out });
+}
+
+async function apiGetQuizAnalytics(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const results = objToArray(await dbGetAll('results'));
+  const stats = {};
+  results.forEach((r) => {
+    const name = r.QuizName;
+    if (!stats[name]) stats[name] = { attempts: 0, totalPct: 0, high: -Infinity, low: Infinity };
+    const pct = Number(r.Percentage) || 0;
+    stats[name].attempts++; stats[name].totalPct += pct;
+    stats[name].high = Math.max(stats[name].high, pct);
+    stats[name].low = Math.min(stats[name].low, pct);
+  });
+  const out = [];
+  for (const quizName in stats) {
+    const s = stats[quizName];
+    out.push({
+      quizName, totalAttempts: s.attempts, averagePercentage: s.attempts > 0 ? Math.round((s.totalPct / s.attempts) * 100) / 100 : 0,
+      highestPercentage: s.attempts > 0 ? s.high : 0, lowestPercentage: s.attempts > 0 ? s.low : 0
+    });
+  }
+  return resp(true, 'OK', { quizAnalytics: out });
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN: ANNOUNCEMENTS
+---------------------------------------------------------------------------- */
+async function apiCreateAnnouncement(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['title', 'message']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const id = generateId('ANN');
+  await dbSet('announcements/' + id, { AnnouncementID: id, Title: p.title, Message: p.message, Date: formatDate(new Date()), Status: p.status || 'Active' });
+  return resp(true, 'Announcement created.', { announcementId: id });
+}
+
+async function apiUpdateAnnouncement(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['announcementId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const existing = await dbGetOne('announcements/' + p.announcementId);
+  if (!existing) return resp(false, 'Announcement not found.');
+  const updates = {};
+  if (!isEmpty(p.title)) updates.Title = p.title;
+  if (!isEmpty(p.message)) updates.Message = p.message;
+  if (!isEmpty(p.status)) updates.Status = p.status;
+  await dbUpdate('announcements/' + p.announcementId, updates);
+  return resp(true, 'Announcement updated.');
+}
+
+async function apiDeleteAnnouncement(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['announcementId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const existing = await dbGetOne('announcements/' + p.announcementId);
+  if (!existing) return resp(false, 'Announcement not found.');
+  await dbRemove('announcements/' + p.announcementId);
+  return resp(true, 'Announcement deleted.');
+}
+
+async function apiGetAnnouncements(p) {
+  let rows = objToArray(await dbGetAll('announcements')).map(stripKey);
+  const authed = !isEmpty(p.adminEmail) && !isEmpty(p.adminPassword) && (await requireAdmin(p)).ok;
+  if (!authed) rows = rows.filter((r) => String(r.Status).toLowerCase() === 'active');
+  return resp(true, 'OK', { announcements: rows });
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN: CONTACTS
+---------------------------------------------------------------------------- */
+async function apiGetContacts(p) {
+  let rows = objToArray(await dbGetAll('contacts')).map(stripKey);
+  const authed = !isEmpty(p.adminEmail) && !isEmpty(p.adminPassword) && (await requireAdmin(p)).ok;
+  if (!authed) rows = rows.filter((r) => String(r.Status).toLowerCase() === 'active');
+  return resp(true, 'OK', { contacts: rows });
+}
+
+async function apiCreateContact(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['name']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const id = generateId('CON');
+  await dbSet('contacts/' + id, { ContactID: id, Name: p.name, Role: p.role || '', Phone: p.phone || '', WhatsApp: p.whatsapp || '', Email: p.email || '', Status: p.status || 'Active' });
+  return resp(true, 'Contact created.', { contactId: id });
+}
+
+async function apiUpdateContact(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['contactId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const existing = await dbGetOne('contacts/' + p.contactId);
+  if (!existing) return resp(false, 'Contact not found.');
+  const updates = {};
+  if (!isEmpty(p.name)) updates.Name = p.name;
+  if (!isEmpty(p.role)) updates.Role = p.role;
+  if (!isEmpty(p.phone)) updates.Phone = p.phone;
+  if (!isEmpty(p.whatsapp)) updates.WhatsApp = p.whatsapp;
+  if (!isEmpty(p.email)) updates.Email = p.email;
+  if (!isEmpty(p.status)) updates.Status = p.status;
+  await dbUpdate('contacts/' + p.contactId, updates);
+  return resp(true, 'Contact updated.');
+}
+
+async function apiDeleteContact(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['contactId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const existing = await dbGetOne('contacts/' + p.contactId);
+  if (!existing) return resp(false, 'Contact not found.');
+  await dbRemove('contacts/' + p.contactId);
+  return resp(true, 'Contact deleted.');
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN MANAGEMENT (Super Admin only) + own profile
+---------------------------------------------------------------------------- */
+async function apiGetAdmins(p) {
+  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
+  const admins = await getAllAdmins();
+  const out = admins.map((a) => { const c = stripKey(a); delete c.Password; return c; });
+  return resp(true, 'OK', { admins: out });
+}
+
+async function apiCreateAdmin(p) {
+  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['name', 'email', 'password']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const admins = await getAllAdmins();
+  if (admins.some((a) => String(a.Email).toLowerCase() === String(p.email).toLowerCase())) return resp(false, 'An admin with this email already exists.');
+  const id = generateId('ADM');
+  const permissions = Array.isArray(p.permissions) ? p.permissions.join(',') : (p.permissions || '');
+  await dbSet('admins/' + id, { AdminID: id, Name: p.name, Email: p.email, Password: p.password, Role: p.role || 'Admin', Status: 'Pending', Photo: p.photo || '', Permissions: permissions });
+  return resp(true, 'Admin created. It is Pending until approved.', { adminId: id });
+}
+
+async function setAdminStatusInternal(adminId, status) {
+  if (isEmpty(adminId)) return resp(false, 'adminId is required.');
+  const existing = await dbGetOne('admins/' + adminId);
+  if (!existing) return resp(false, 'Admin not found.');
+  await dbUpdate('admins/' + adminId, { Status: status });
+  return resp(true, `Admin status updated to "${status}".`);
+}
+async function apiApproveAdmin(p) { const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response; return setAdminStatusInternal(p.adminId, 'Active'); }
+async function apiRejectAdmin(p) { const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response; return setAdminStatusInternal(p.adminId, 'Rejected'); }
+async function apiSetAdminStatus(p) {
+  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['adminId', 'status']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  return setAdminStatusInternal(p.adminId, p.status);
+}
+
+async function apiUpdateAdminPermissions(p) {
+  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['adminId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const existing = await dbGetOne('admins/' + p.adminId);
+  if (!existing) return resp(false, 'Admin not found.');
+  const permissions = Array.isArray(p.permissions) ? p.permissions.join(',') : (p.permissions || '');
+  const updates = { Permissions: permissions };
+  if (!isEmpty(p.role)) updates.Role = p.role;
+  await dbUpdate('admins/' + p.adminId, updates);
+  return resp(true, 'Permissions updated.');
+}
+
+async function apiRemoveAdmin(p) {
+  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['adminId']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  if (auth.admin.AdminID === p.adminId) return resp(false, 'You cannot remove your own account while logged in as it.');
+  const existing = await dbGetOne('admins/' + p.adminId);
+  if (!existing) return resp(false, 'Admin not found.');
+  await dbRemove('admins/' + p.adminId);
+  return resp(true, 'Admin removed.');
+}
+
+async function apiUpdateAdminProfile(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const admins = await getAllAdmins();
+  const target = admins.find((a) => String(a.Email).toLowerCase() === String(auth.admin.Email).toLowerCase());
+  if (!target) return resp(false, 'Admin not found.');
+  const updates = {};
+  if (!isEmpty(p.name)) updates.Name = p.name;
+  if (!isEmpty(p.photo)) updates.Photo = p.photo;
+  if (!isEmpty(p.newPassword)) updates.Password = p.newPassword;
+  await dbUpdate('admins/' + target.AdminID, updates);
+  return resp(true, 'Profile updated.');
+}
+
+/* ----------------------------------------------------------------------------
+   ADMIN: CREATE QUIZ FROM THE PANEL (new — replaces hand-editing the
+   Firebase console). Questions are pasted one-per-line as:
+     Question | OptionA | OptionB | OptionC | OptionD | CorrectAnswer
+---------------------------------------------------------------------------- */
+function parseQuestionLines(text) {
+  const lines = String(text || '').split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim().length > 0);
+  const questions = [];
+  for (let i = 0; i < lines.length; i++) {
+    const raw = lines[i];
+    // Auto-detect the delimiter: pasting cells straight from Google Sheets/Excel
+    // produces TAB-separated values; typed-out lines use "|" as a fallback.
+    let parts;
+    if (raw.indexOf('\t') !== -1) parts = raw.split('\t').map((s) => s.trim());
+    else parts = raw.split('|').map((s) => s.trim());
+
+    // Skip an optional header row (e.g. "Question  Option A  Option B ...")
+    if (i === 0 && /^question$/i.test(parts[0] || '')) continue;
+
+    if (parts.length !== 6) return { error: `Line ${i + 1} is invalid — found ${parts.length} column(s), expected 6 (Question, Option A, Option B, Option C, Option D, Correct Answer). Make sure you copied all 6 columns.` };
+    const [Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswerRaw] = parts;
+    if (isEmpty(Question) || isEmpty(OptionA) || isEmpty(OptionB) || isEmpty(OptionC) || isEmpty(OptionD) || isEmpty(CorrectAnswerRaw)) {
+      return { error: `Line ${i + 1} has an empty column.` };
+    }
+    const CorrectAnswer = CorrectAnswerRaw.trim().toUpperCase();
+    const byLetter = ['A', 'B', 'C', 'D'].indexOf(CorrectAnswer) !== -1;
+    let finalAnswer = CorrectAnswer;
+    if (!byLetter) {
+      // Fallback: the Correct Answer column may contain the option's full text
+      // (e.g. "fine") instead of a letter — match it against OptionA-D and
+      // convert to the matching letter automatically.
+      const optionTexts = { A: OptionA, B: OptionB, C: OptionC, D: OptionD };
+      const match = Object.keys(optionTexts).find((k) => String(optionTexts[k]).trim().toLowerCase() === CorrectAnswerRaw.trim().toLowerCase());
+      if (!match) return { error: `Line ${i + 1}: the Correct Answer column ("${CorrectAnswerRaw}") doesn't match A, B, C, D or any of that row's option text.` };
+      finalAnswer = match;
+    }
+    questions.push({ Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswer: finalAnswer });
+  }
+  return { questions };
+}
+
+async function apiCreateQuiz(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName', 'questionsText']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = toKey(p.quizName);
+  const existingQuiz = await dbGetOne('quizzes/' + key);
+  if (existingQuiz) return resp(false, 'A quiz with this name already exists.');
+  const parsed = parseQuestionLines(p.questionsText);
+  if (parsed.error) return resp(false, parsed.error);
+  if (parsed.questions.length === 0) return resp(false, 'No questions provided.');
+  await dbSet('quizzes/' + key, { name: p.quizName, questions: parsed.questions });
+  await syncQuizSettingsWithTabs();
+  return resp(true, `Quiz created with ${parsed.questions.length} question(s). It is in Draft status — publish it from Quiz Review.`, { quizKey: key });
+}
+
+async function apiAddQuizQuestions(p) {
+  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
+  const missing = validateRequired(p, ['quizName', 'questionsText']);
+  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
+  const key = await findQuizByName(p.quizName);
+  const quiz = await dbGetOne('quizzes/' + key);
+  if (!quiz) return resp(false, 'Quiz not found.');
+  const parsed = parseQuestionLines(p.questionsText);
+  if (parsed.error) return resp(false, parsed.error);
+  if (parsed.questions.length === 0) return resp(false, 'No questions provided.');
+  const existingQuestions = Array.isArray(quiz.questions) ? quiz.questions : (quiz.questions ? Object.values(quiz.questions) : []);
+  await dbUpdate('quizzes/' + key, { questions: existingQuestions.concat(parsed.questions) });
+  return resp(true, `${parsed.questions.length} question(s) added.`);
+}
+
+/* ----------------------------------------------------------------------------
+   ROUTER + CORE apiCall (same call signature/response shape as before, so
+   every UI call site below (apiCall(API_ACTIONS.xxx, {...})) keeps working
+   unchanged.
+---------------------------------------------------------------------------- */
+const ACTION_HANDLERS = {
+  registerStudent: apiRegisterStudent, studentLogin: apiStudentLogin, studentLogout: apiStudentLogout,
+  getStudentProfile: apiGetStudentProfile, updateStudentProfile: apiUpdateStudentProfile,
+  getQuizzes: apiGetQuizzes, getQuizQuestions: apiGetQuizQuestions, submitQuiz: apiSubmitQuiz,
+  getStudentResults: apiGetStudentResults, getStudentDashboard: apiGetStudentDashboard,
+  adminLogin: apiAdminLogin, getStudents: apiGetStudents, approveStudent: apiApproveStudent,
+  rejectStudent: apiRejectStudent, setStudentStatus: apiSetStudentStatus,
+  getAllQuizzesAdmin: apiGetAllQuizzesAdmin, setQuizActive: apiSetQuizActive, setQuizExpiry: apiSetQuizExpiry,
+  updateQuizSettings: apiUpdateQuizSettings, getAllResults: apiGetAllResults, searchStudentResults: apiSearchStudentResults,
+  getClassAnalytics: apiGetClassAnalytics, getQuizAnalytics: apiGetQuizAnalytics,
+  createAnnouncement: apiCreateAnnouncement, updateAnnouncement: apiUpdateAnnouncement,
+  deleteAnnouncement: apiDeleteAnnouncement, getAnnouncements: apiGetAnnouncements,
+  reviewQuiz: apiReviewQuiz, publishQuiz: apiPublishQuiz, unpublishQuiz: apiUnpublishQuiz, requestChanges: apiRequestChanges,
+  getContacts: apiGetContacts, createContact: apiCreateContact, updateContact: apiUpdateContact, deleteContact: apiDeleteContact,
+  getAdmins: apiGetAdmins, createAdmin: apiCreateAdmin, approveAdmin: apiApproveAdmin, rejectAdmin: apiRejectAdmin,
+  setAdminStatus: apiSetAdminStatus, updateAdminPermissions: apiUpdateAdminPermissions, removeAdmin: apiRemoveAdmin,
+  updateAdminProfile: apiUpdateAdminProfile,
+  createQuiz: apiCreateQuiz, addQuizQuestions: apiAddQuizQuestions
+};
+
 async function apiCall(action, params = {}) {
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...params })
-    });
-    const data = await res.json();
-    return data;
+    if (!action) return resp(false, 'Missing "action" parameter');
+    const fn = ACTION_HANDLERS[action];
+    if (!fn) return resp(false, 'Unknown action: ' + action);
+    return await fn(params);
   } catch (err) {
-    return { success: false, message: 'Network error — could not reach the server. ' + err.message, data: {} };
+    return resp(false, 'Server error: ' + (err && err.message ? err.message : String(err)));
   }
 }
+
 
 /* ----------------------------------------------------------------------------
    TOASTS
@@ -949,6 +1779,7 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
         <td class="row-actions">
           <button class="btn btn-outline btn-sm" data-action="toggle" data-name="${escapeHtml(q.QuizName)}" data-active="${isActive}">${isActive ? 'Unpublish' : 'Publish'}</button>
           <button class="btn btn-ghost btn-sm" data-action="settings" data-name="${escapeHtml(q.QuizName)}">Settings</button>
+          <button class="btn btn-ghost btn-sm" data-action="addquestions" data-name="${escapeHtml(q.QuizName)}">+ Questions</button>
         </td>
       </tr>`;
     }).join('')}
@@ -965,8 +1796,56 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   el.querySelectorAll('[data-action="settings"]').forEach(btn => {
     btn.addEventListener('click', () => openQuizSettingsModal(btn.dataset.name, quizzes.find(q => q.QuizName === btn.dataset.name)));
   });
+  el.querySelectorAll('[data-action="addquestions"]').forEach(btn => {
+    btn.addEventListener('click', () => openAddQuizModal('append', btn.dataset.name));
+  });
 }
 document.getElementById('refreshAdminQuizzesBtn').addEventListener('click', () => loadAdminQuizzes());
+
+/* ============================================================================
+   ADMIN: ADD QUIZ / ADD QUESTIONS MODAL
+   ============================================================================ */
+let addQuizMode = 'create'; // 'create' | 'append'
+
+function openAddQuizModal(mode, quizName) {
+  addQuizMode = mode;
+  const form = document.getElementById('addQuizForm');
+  form.reset();
+  document.getElementById('addQuizError').classList.add('hidden');
+  const nameInput = document.getElementById('addQuizName');
+  if (mode === 'append') {
+    document.getElementById('addQuizModalTitle').textContent = 'Add Questions — ' + quizName;
+    nameInput.value = quizName;
+    nameInput.readOnly = true;
+  } else {
+    document.getElementById('addQuizModalTitle').textContent = 'Add Quiz';
+    nameInput.value = '';
+    nameInput.readOnly = false;
+  }
+  openModal('addQuizModal');
+}
+document.getElementById('newQuizBtn').addEventListener('click', () => openAddQuizModal('create', ''));
+document.getElementById('addQuizCancelBtn').addEventListener('click', () => closeModal('addQuizModal'));
+document.getElementById('addQuizForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('addQuizError');
+  errEl.classList.add('hidden');
+  const quizName = document.getElementById('addQuizName').value.trim();
+  const questionsText = document.getElementById('addQuizQuestionsText').value;
+  const btn = document.getElementById('addQuizSaveBtn');
+  setBtnLoading(btn, true);
+  const action = addQuizMode === 'append' ? API_ACTIONS.addQuizQuestions : API_ACTIONS.createQuiz;
+  const res = await apiCall(action, { quizName, questionsText, ...adminAuthParams() });
+  setBtnLoading(btn, false);
+  if (res.success) {
+    toast(res.message || 'Saved.', 'success');
+    closeModal('addQuizModal');
+    loadAdminQuizzes();
+  } else {
+    errEl.textContent = res.message || 'Could not save.';
+    errEl.classList.remove('hidden');
+  }
+});
 
 function openQuizSettingsModal(quizName, settings) {
   document.getElementById('quizSettingsName').textContent = quizName;
