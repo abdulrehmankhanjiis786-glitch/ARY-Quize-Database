@@ -6,7 +6,7 @@
 <title>ARY Quize Bank — Assessment Platform</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
 </head>
 <body>
@@ -264,6 +264,9 @@
       <a href="#" data-nav="student-quizzes" data-icon="list">Available Quizzes</a>
       <a href="#" data-nav="student-results" data-icon="chart">Results</a>
       <a href="#" data-nav="student-history" data-icon="clock">Quiz History</a>
+      <a href="#" data-nav="student-leaderboard" data-icon="trophy">Leaderboard</a>
+      <a href="#" data-nav="student-notifications" data-icon="bell">Notifications <span id="studentNotifDot" class="nav-dot hidden"></span></a>
+      <a href="#" data-nav="student-certificates" data-icon="award">Certificates</a>
       <a href="#" data-nav="student-profile" data-icon="user">Profile</a>
       <a href="#" data-nav="student-contact" data-icon="mail">Contact</a>
     </nav>
@@ -275,6 +278,9 @@
       <button id="studentSidebarToggle" class="sidebar-toggle" aria-label="Toggle menu">☰</button>
       <h2 id="studentTopbarTitle">Dashboard</h2>
       <div class="topbar-spacer"></div>
+      <button id="studentNotifBellBtn" class="notif-bell" data-nav="student-notifications" aria-label="Notifications">
+        🔔<span id="studentNotifBellDot" class="nav-dot hidden"></span>
+      </button>
     </header>
 
     <div class="app-content">
@@ -362,6 +368,29 @@
         <div id="studentHistoryTable" class="table-wrap"></div>
       </section>
 
+      <!-- Leaderboard -->
+      <section id="studentSectionLeaderboard" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Leaderboard</h2>
+          <select id="studentLeaderboardQuizSelect" class="search-input"></select>
+        </div>
+        <p class="section-sub">Ranked by score — ties are broken by whoever finished faster.</p>
+        <div id="studentLeaderboardList"></div>
+      </section>
+
+      <!-- Notifications -->
+      <section id="studentSectionNotifications" class="content-section hidden">
+        <h2>Notifications</h2>
+        <div id="studentNotificationsList" class="announcement-list"></div>
+      </section>
+
+      <!-- Certificates -->
+      <section id="studentSectionCertificates" class="content-section hidden">
+        <h2>Certificates</h2>
+        <p class="section-sub">Certificates issued to you by ARY Quize Bank.</p>
+        <div id="studentCertificatesGrid" class="quiz-grid"></div>
+      </section>
+
       <!-- Profile -->
       <section id="studentSectionProfile" class="content-section hidden">
         <h2>Profile</h2>
@@ -430,8 +459,11 @@
       <a href="#" data-nav="admin-quizzes" data-perm="quizzes">Quizzes</a>
       <a href="#" data-nav="admin-review" data-perm="review">Quiz Review</a>
       <a href="#" data-nav="admin-results" data-perm="results">Results</a>
+      <a href="#" data-nav="admin-leaderboard" data-perm="results">Leaderboard</a>
       <a href="#" data-nav="admin-analytics" data-perm="analytics">Analytics</a>
       <a href="#" data-nav="admin-announcements" data-perm="announcements">Announcements</a>
+      <a href="#" data-nav="admin-notifications" data-perm="announcements">Notifications</a>
+      <a href="#" data-nav="admin-certificates" data-perm="students">Certificates</a>
       <a href="#" data-nav="admin-contacts" data-perm="contacts">Contacts</a>
       <a href="#" data-nav="admin-management" data-perm="admins">Admin Management</a>
       <a href="#" data-nav="admin-profile" data-perm="profile">My Profile</a>
@@ -487,7 +519,7 @@
           <h2>Quizzes</h2>
           <div class="row-actions">
             <button class="btn btn-outline btn-sm" id="refreshAdminQuizzesBtn">Refresh</button>
-            <button class="btn btn-primary btn-sm" id="newQuizBtn">+ Add Quiz</button>
+            <button class="btn btn-primary btn-sm" id="newQuizBtn">Create New Quiz</button>
           </div>
         </div>
         <div id="adminQuizzesTable" class="table-wrap"></div>
@@ -510,6 +542,16 @@
           <input type="search" id="resultsSearchInput" class="search-input" placeholder="Search student or quiz">
         </div>
         <div id="adminResultsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Leaderboard -->
+      <section id="adminSectionLeaderboard" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Leaderboard</h2>
+          <select id="adminLeaderboardQuizSelect" class="search-input"></select>
+        </div>
+        <p class="section-sub">Ranked by score — ties are broken by whoever finished faster.</p>
+        <div id="adminLeaderboardList"></div>
       </section>
 
       <!-- Analytics -->
@@ -543,6 +585,54 @@
           <button class="btn btn-primary btn-sm" id="newAnnouncementBtn">New Announcement</button>
         </div>
         <div id="adminAnnouncementsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Notifications -->
+      <section id="adminSectionNotifications" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Notifications</h2>
+          <button class="btn btn-primary btn-sm" id="newNotificationBtn">Send Notification</button>
+        </div>
+        <p class="section-sub">Shows up on the student's screen while their app is open (in-app + browser notification).</p>
+        <div id="adminNotificationsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Certificates -->
+      <section id="adminSectionCertificates" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Certificates</h2>
+          <button class="btn btn-primary btn-sm" id="newCertificateBtn">Issue Certificate</button>
+        </div>
+        <p class="section-sub">Mock test / course completion certificates — navy &amp; gold template with an official ARY Quize Bank seal.</p>
+        <div id="adminCertificatesGrid" class="quiz-grid"></div>
+      </section>
+
+      <!-- Student Performance (opened from the Students table) -->
+      <section id="adminSectionPerformance" class="content-section hidden">
+        <div class="section-head-row">
+          <h2 id="perfStudentName">Student Performance</h2>
+          <button class="btn btn-ghost btn-sm" data-nav="admin-students">← Back to Students</button>
+        </div>
+        <div id="perfCaptureArea" style="position:relative;">
+          <div class="welcome-banner">
+            <img id="perfPhoto" class="avatar-lg" src="" alt="">
+            <div>
+              <h2 id="perfName">—</h2>
+              <p id="perfSub" class="section-sub">—</p>
+            </div>
+          </div>
+          <div class="stat-grid" id="perfStatGrid"></div>
+          <div class="panel">
+            <div class="panel-head"><h3>All Results</h3></div>
+            <div id="perfResultsTable" class="table-wrap"></div>
+          </div>
+        </div>
+        <div class="row-actions perf-actions">
+          <button class="btn btn-outline btn-sm" id="perfScreenshotBtn">Download Screenshot</button>
+          <button class="btn btn-outline btn-sm" id="perfPdfBtn">Download PDF Report</button>
+          <button class="btn btn-primary btn-sm" id="perfEmailBtn">Email to Student (Gmail)</button>
+          <button class="btn btn-success btn-sm" id="perfWhatsappBtn">Share via WhatsApp</button>
+        </div>
       </section>
 
       <!-- Contacts -->
@@ -681,54 +771,33 @@
 </div>
 
 <!-- ============================================================ -->
-<!-- ADD QUIZ / ADD QUESTIONS MODAL -->
-<!-- ============================================================ -->
-<div id="addQuizModal" class="modal-backdrop hidden">
-  <div class="modal">
-    <h3 id="addQuizModalTitle">Add Quiz</h3>
-    <form id="addQuizForm">
-      <label class="field" id="addQuizNameField">
-        <span>Quiz Name</span>
-        <input type="text" id="addQuizName" placeholder="e.g. Physics Chapter 1" required>
-      </label>
-      <label class="field">
-        <span>Questions</span>
-        <textarea id="addQuizQuestionsText" rows="10" placeholder="Paste directly from Google Sheets / Excel — select the Question, Option A-D, Correct Answer columns and Ctrl+C, Ctrl+V here." required></textarea>
-      </label>
-      <p class="field-hint">Easiest way: in your Google Sheet, select the 6 columns (Question, Option A, Option B, Option C, Option D, Correct Answer) for all your questions, <strong>Ctrl+C</strong>, then <strong>Ctrl+V</strong> directly into the box above — it pastes correctly on its own.<br>
-        Correct Answer column can be either the letter (A/B/C/D) or the full answer text — both work.</p>
-      <div id="addQuizError" class="form-error hidden"></div>
-      <div class="modal-actions">
-        <button type="button" class="btn btn-ghost" id="addQuizCancelBtn">Cancel</button>
-        <button type="submit" class="btn btn-primary" id="addQuizSaveBtn">Save</button>
-      </div>
-    </form>
-  </div>
-</div>
-
-<!-- ============================================================ -->
 <!-- QUIZ RESULT MODAL -->
 <!-- ============================================================ -->
 <div id="resultModal" class="modal-backdrop hidden">
   <div class="modal modal-result">
-    <div class="result-ring-wrap">
-      <svg viewBox="0 0 120 120" class="result-ring">
-        <circle cx="60" cy="60" r="52" class="result-ring-track"></circle>
-        <circle cx="60" cy="60" r="52" class="result-ring-fill" id="resultRingFill"></circle>
-      </svg>
-      <div class="result-ring-label">
-        <span id="resultPercentage">0%</span>
+    <div id="resultCaptureArea" style="position:relative;">
+      <div id="resultStamp" class="result-receipt-stamp"></div>
+      <div id="resultCelebration" class="celebration-banner hidden">🏆 New Top Score! Congratulations!</div>
+      <div class="result-ring-wrap">
+        <svg viewBox="0 0 120 120" class="result-ring">
+          <circle cx="60" cy="60" r="52" class="result-ring-track"></circle>
+          <circle cx="60" cy="60" r="52" class="result-ring-fill" id="resultRingFill"></circle>
+        </svg>
+        <div class="result-ring-label">
+          <span id="resultPercentage">0%</span>
+        </div>
       </div>
+      <h3 id="resultQuizName">Quiz Complete</h3>
+      <div class="result-stat-row">
+        <div><span id="resultScore">0</span><label>Score</label></div>
+        <div><span id="resultCorrect">0</span><label>Correct</label></div>
+        <div><span id="resultWrong">0</span><label>Wrong</label></div>
+        <div><span id="resultTotal">0</span><label>Total</label></div>
+      </div>
+      <p class="result-meta" id="resultMeta">—</p>
     </div>
-    <h3 id="resultQuizName">Quiz Complete</h3>
-    <div class="result-stat-row">
-      <div><span id="resultScore">0</span><label>Score</label></div>
-      <div><span id="resultCorrect">0</span><label>Correct</label></div>
-      <div><span id="resultWrong">0</span><label>Wrong</label></div>
-      <div><span id="resultTotal">0</span><label>Total</label></div>
-    </div>
-    <p class="result-meta" id="resultMeta">—</p>
-    <div class="modal-actions">
+    <div class="modal-actions modal-actions-column">
+      <button class="btn btn-outline btn-block" id="resultScreenshotBtn">Download Screenshot</button>
       <button class="btn btn-primary btn-block" id="resultCloseBtn">Back to Dashboard</button>
     </div>
   </div>
@@ -826,6 +895,153 @@
   </div>
 </div>
 
-<script type="module" src="script.js"></script>
+<!-- ============================================================ -->
+<!-- NOTIFICATION COMPOSER MODAL -->
+<!-- ============================================================ -->
+<div id="notificationModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>Send Notification</h3>
+    <form id="notificationForm">
+      <label class="field">
+        <span>Title</span>
+        <input type="text" id="notifTitle" required>
+      </label>
+      <label class="field">
+        <span>Message</span>
+        <textarea id="notifMessage" rows="3" required></textarea>
+      </label>
+      <label class="field">
+        <span>Send to</span>
+        <select id="notifTargetType">
+          <option value="All">All Students</option>
+          <option value="Class">A specific Class</option>
+          <option value="Student">A specific Student (by ID)</option>
+        </select>
+      </label>
+      <label class="field hidden" id="notifTargetValueField">
+        <span id="notifTargetValueLabel">Class name</span>
+        <input type="text" id="notifTargetValue">
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="notificationCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="notificationSaveBtn">Send</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- EMAIL-TO-STUDENT MODAL (used from the Performance panel) -->
+<!-- ============================================================ -->
+<div id="emailModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>Email <span id="emailModalTarget"></span></h3>
+    <form id="emailForm">
+      <label class="field">
+        <span>Subject</span>
+        <input type="text" id="emailSubject">
+      </label>
+      <label class="field">
+        <span>Message</span>
+        <textarea id="emailMessage" rows="3"></textarea>
+      </label>
+      <p class="field-hint" id="emailAttachmentNote">A screenshot of this performance report will be attached.</p>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="emailCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="emailSendBtn">Send Email</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- QUIZ QUESTION EDITOR MODAL (create new quiz + edit existing questions) -->
+<!-- ============================================================ -->
+<div id="questionEditorModal" class="modal-backdrop hidden">
+  <div class="modal modal-wide">
+    <h3 id="questionEditorTitle">Create New Quiz</h3>
+    <form id="questionEditorForm">
+      <label class="field" id="qeQuizNameField">
+        <span>Quiz Name <span class="field-hint">(becomes the sheet tab name — keep it unique)</span></span>
+        <input type="text" id="qeQuizName" required>
+      </label>
+
+      <details class="bulk-import">
+        <summary>Paste / bulk-upload questions instead of typing them one by one</summary>
+        <p class="field-hint">One question per line, fields separated by <code>|</code>:<br>
+          <code>Question text | Option A | Option B | Option C | Option D | CorrectLetter</code></p>
+        <textarea id="qeBulkText" rows="5" placeholder="What is hemoglobin? | A protein | A vitamin | A hormone | A mineral | A"></textarea>
+        <button type="button" class="btn btn-outline btn-sm" id="qeBulkImportBtn">Add These Rows</button>
+      </details>
+
+      <div id="qeQuestionRows" class="qe-rows"></div>
+      <button type="button" class="btn btn-outline btn-sm" id="qeAddRowBtn">+ Add Question</button>
+
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="questionEditorCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="questionEditorSaveBtn">Save Quiz</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- CERTIFICATE ISSUER MODAL -->
+<!-- ============================================================ -->
+<div id="certificateModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>Issue Certificate</h3>
+    <form id="certificateForm">
+      <input type="hidden" id="certSelectedStudentId">
+      <label class="field">
+        <span>Find Student</span>
+        <div class="field-row" style="grid-template-columns: 1fr auto;">
+          <input type="text" id="certStudentSearchInput" placeholder="Name, email, or ID">
+          <button type="button" class="btn btn-outline btn-sm" id="certStudentSearchBtn">Search</button>
+        </div>
+      </label>
+      <div id="certStudentSearchResult"></div>
+      <p class="field-hint" id="certSelectedStudentLabel">No student selected yet.</p>
+
+      <label class="field">
+        <span>Certificate Type</span>
+        <select id="certType">
+          <option value="OutstandingPerformance">Outstanding Performance</option>
+          <option value="Completion">Course / Mock Test Completion</option>
+          <option value="MockTest">Mock Test Certificate</option>
+        </select>
+      </label>
+      <div class="field-row">
+        <label class="field"><span>Program</span><input type="text" id="certProgram" placeholder="BSN (Generic)"></label>
+        <label class="field"><span>Semester</span><input type="text" id="certSemester" placeholder="Semester 3"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Shift</span><input type="text" id="certShift" placeholder="Evening Shift"></label>
+        <label class="field"><span>Roll No.</span><input type="text" id="certRollNo" placeholder="34-67-09"></label>
+      </div>
+      <label class="field">
+        <span>Achievement Text</span>
+        <textarea id="certAchievement" rows="2" required placeholder="for successfully attempting all quizzes of ARY Quize Bank"></textarea>
+      </label>
+      <div class="field-row">
+        <label class="field"><span>Score</span><input type="number" id="certScore" placeholder="12"></label>
+        <label class="field"><span>Out of</span><input type="number" id="certTotalQuizzes" placeholder="12"></label>
+      </div>
+      <div class="field-row">
+        <label class="field"><span>Mentor Name</span><input type="text" id="certMentorName" placeholder="Ahtisham Afzal"></label>
+        <label class="field"><span>Admin Name</span><input type="text" id="certAdminName" placeholder="Abdul Rehman Yousafzai"></label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="certificateCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="certificateSaveBtn">Issue Certificate</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Screenshot + PDF export libraries (client-side only, no data leaves the browser except via the explicit Email/WhatsApp actions) -->
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+<script src="script.js"></script>
 </body>
 </html>

@@ -1,32 +1,16 @@
 /* ============================================================================
    ARY QUIZE BANK — FRONTEND LOGIC
-   Backed directly by Firebase Realtime Database (no Apps Script backend).
-   Every function below reproduces the exact behaviour of the original
-   Code.gs actions, 1:1, against Firebase instead of Google Sheets.
+   Talks ONLY to the existing deployed Google Apps Script backend below.
+   No Code.gs is created or modified here.
    ============================================================================ */
 
-import { initializeApp } from "https://www.gstatic.com/firebasejs/10.13.0/firebase-app.js";
-import {
-  getDatabase, ref, get, set, update, remove
-} from "https://www.gstatic.com/firebasejs/10.13.0/firebase-database.js";
-
-const firebaseConfig = {
-  apiKey: "AIzaSyBehFk5dWZL5_RLjmUqEnTnt1bBrsFG3sQ",
-  authDomain: "ary-quiize-bank-data.firebaseapp.com",
-  databaseURL: "https://ary-quiize-bank-data-default-rtdb.asia-southeast1.firebasedatabase.app",
-  projectId: "ary-quiize-bank-data",
-  storageBucket: "ary-quiize-bank-data.firebasestorage.app",
-  messagingSenderId: "924736650507",
-  appId: "1:924736650507:web:a8d424ce9d5a4963d9b60e"
-};
-
-const fbApp = initializeApp(firebaseConfig);
-const db = getDatabase(fbApp);
+const API_URL = "https://script.google.com/macros/s/AKfycbwUyx6Cka3OOdUlM8d1fIAG-Y5yrAREbnmdMVu51p57ceEdLQavqApagQjTIzt9s0wZ/exec";
 
 /* ----------------------------------------------------------------------------
    API ACTION MAP
-   Kept for compatibility — every call site in this file uses API_ACTIONS.xxx,
-   and the strings match the handler keys in ACTION_HANDLERS below.
+   Every action below exists in the deployed Code.gs and is safe to call.
+   Actions marked BACKEND ACTION REQUIRED do NOT exist yet — any UI that would
+   need them shows an explanatory notice instead of pretending to work.
 ---------------------------------------------------------------------------- */
 const API_ACTIONS = {
   // Student
@@ -77,840 +61,49 @@ const API_ACTIONS = {
   updateAdminPermissions: 'updateAdminPermissions',
   removeAdmin: 'removeAdmin',
   updateAdminProfile: 'updateAdminProfile',
-  // Quiz creation from the Admin panel (new — no Firebase console needed)
+  // Full results control (v3)
+  deleteResult: 'deleteResult',
+  updateResult: 'updateResult',
+  deleteQuiz: 'deleteQuiz',
+  getLeaderboard: 'getLeaderboard',
+  getStudentPerformance: 'getStudentPerformance',
+  // Quiz question management (v5)
   createQuiz: 'createQuiz',
-  addQuizQuestions: 'addQuizQuestions'
+  getQuizQuestionsAdmin: 'getQuizQuestionsAdmin',
+  updateQuizQuestions: 'updateQuizQuestions',
+  // Notifications (v3)
+  createNotification: 'createNotification',
+  getNotifications: 'getNotifications',
+  getAllNotificationsAdmin: 'getAllNotificationsAdmin',
+  deleteNotification: 'deleteNotification',
+  // Email delivery (v3)
+  sendResultEmail: 'sendResultEmail',
+  sendReportEmail: 'sendReportEmail',
+  // Certificates (v4)
+  issueCertificate: 'issueCertificate',
+  getStudentCertificates: 'getStudentCertificates',
+  getAllCertificatesAdmin: 'getAllCertificatesAdmin',
+  deleteCertificate: 'deleteCertificate'
 };
 
 /* ----------------------------------------------------------------------------
-   LOW-LEVEL DB HELPERS
+   CORE API HELPER
+   Uses text/plain to avoid a CORS preflight against Apps Script, which only
+   reads e.postData.contents as JSON regardless of the declared content type.
 ---------------------------------------------------------------------------- */
-async function dbGetAll(path) {
-  const snap = await get(ref(db, path));
-  return snap.exists() ? snap.val() : {};
-}
-async function dbGetOne(path) {
-  const snap = await get(ref(db, path));
-  return snap.exists() ? snap.val() : null;
-}
-async function dbSet(path, value) { await set(ref(db, path), value); }
-async function dbUpdate(path, value) { await update(ref(db, path), value); }
-async function dbRemove(path) { await remove(ref(db, path)); }
-
-function objToArray(obj) {
-  if (!obj) return [];
-  return Object.keys(obj).map((k) => ({ ...obj[k], _key: k }));
-}
-function stripKey(obj) { const c = { ...obj }; delete c._key; return c; }
-
-/* ----------------------------------------------------------------------------
-   GENERIC HELPERS (ported 1:1 from Code.gs)
----------------------------------------------------------------------------- */
-function resp(success, message, data) {
-  return { success, message: message || '', data: data !== undefined ? data : {} };
-}
-function isEmpty(v) { return v === undefined || v === null || String(v).trim() === ''; }
-function validateRequired(params, fields) {
-  const missing = [];
-  for (const f of fields) if (isEmpty(params[f])) missing.push(f);
-  return missing;
-}
-function generateId(prefix) {
-  const stamp = Date.now().toString(36).toUpperCase();
-  const rand = Math.floor(Math.random() * 46656).toString(36).toUpperCase();
-  return prefix + '-' + stamp + rand;
-}
-function toKey(str) { return String(str).trim().replace(/[.#$[\]]/g, '_'); }
-function formatDate(d) {
-  return new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Karachi', year: 'numeric', month: '2-digit', day: '2-digit' }).format(d);
-}
-function formatTime(d) {
-  return new Intl.DateTimeFormat('en-GB', { timeZone: 'Asia/Karachi', hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false }).format(d);
-}
-function shuffleArray(arr) {
-  const a = arr.slice();
-  for (let i = a.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [a[i], a[j]] = [a[j], a[i]];
-  }
-  return a;
-}
-const REVIEW_STATUSES = ['Draft', 'UnderReview', 'ChangesRequired', 'Approved', 'Published', 'Rejected'];
-
-/* ----------------------------------------------------------------------------
-   QUIZ TAB DETECTION + QuizSettings MANAGEMENT
-   In the Sheets version, any non-system sheet tab was an auto-detected quiz.
-   Here, any node under /quizzes/{quizKey} is an auto-detected quiz — add
-   quizzes and their questions directly in the Firebase console, the same
-   way you used to add a new sheet tab.
-   Shape:  /quizzes/{quizKey} = { name: "Quiz Name", questions: [
-             { Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswer }, ...
-           ] }
----------------------------------------------------------------------------- */
-async function syncQuizSettingsWithTabs() {
-  const quizzes = await dbGetAll('quizzes');
-  const keys = Object.keys(quizzes);
-  const settings = await dbGetAll('quizSettings');
-  const updates = {};
-  for (const key of keys) {
-    if (!settings[key]) {
-      const name = (quizzes[key] && quizzes[key].name) ? quizzes[key].name : key;
-      updates[key] = {
-        QuizName: name, Active: false, ExpiryDate: '', ExpiryTime: '', DurationMinutes: 30,
-        AllowMultipleAttempts: false, QuizType: 'Regular', RandomizeQuestions: false, RandomizeOptions: false,
-        CreatedDate: formatDate(new Date()), ReviewStatus: 'Draft', ReviewNote: ''
-      };
-    }
-  }
-  if (Object.keys(updates).length) await dbUpdate('quizSettings', updates);
-  return keys.map((k) => ({ key: k, name: (quizzes[k] && quizzes[k].name) ? quizzes[k].name : k }));
-}
-
-async function findQuizByName(quizName) {
-  const list = await syncQuizSettingsWithTabs();
-  const found = list.find((q) => q.name === quizName);
-  return found ? found.key : toKey(quizName);
-}
-
-function getEffectiveReviewStatus(settingsRow) {
-  if (!isEmpty(settingsRow.ReviewStatus)) return settingsRow.ReviewStatus;
-  const active = settingsRow.Active === true || String(settingsRow.Active).toUpperCase() === 'TRUE';
-  return active ? 'Published' : 'Draft';
-}
-function isQuizExpired(settingsRow) {
-  if (!settingsRow || isEmpty(settingsRow.ExpiryDate)) return false;
-  const timeStr = isEmpty(settingsRow.ExpiryTime) ? '23:59:59' : settingsRow.ExpiryTime;
-  const expiryDateTime = new Date(settingsRow.ExpiryDate + 'T' + timeStr);
-  if (isNaN(expiryDateTime.getTime())) return false;
-  return Date.now() > expiryDateTime.getTime();
-}
-async function getQuizQuestionsFull(quizKey) {
-  const quiz = await dbGetOne('quizzes/' + quizKey);
-  if (!quiz) return null;
-  const list = Array.isArray(quiz.questions) ? quiz.questions : (quiz.questions ? Object.values(quiz.questions) : []);
-  const out = [];
-  list.forEach((r, i) => {
-    if (!r || isEmpty(r.Question)) return;
-    out.push({
-      index: i, question: r.Question, optionA: r.OptionA, optionB: r.OptionB, optionC: r.OptionC, optionD: r.OptionD,
-      correctAnswer: String(r.CorrectAnswer).trim().toUpperCase()
-    });
-  });
-  return out;
-}
-async function quizQuestionCount(quizKey) {
-  const quiz = await dbGetOne('quizzes/' + quizKey);
-  const list = quiz && quiz.questions ? (Array.isArray(quiz.questions) ? quiz.questions : Object.values(quiz.questions)) : [];
-  return list.filter((x) => x && !isEmpty(x.Question)).length;
-}
-
-/* ----------------------------------------------------------------------------
-   STUDENT APIs
----------------------------------------------------------------------------- */
-async function getAllStudents() { return objToArray(await dbGetAll('students')); }
-
-async function apiRegisterStudent(p) {
-  const missing = validateRequired(p, ['name', 'email', 'password']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const students = await getAllStudents();
-  if (students.some((s) => String(s.Email).toLowerCase() === String(p.email).toLowerCase())) {
-    return resp(false, 'An account with this email already exists.');
-  }
-  const studentId = generateId('STU');
-  const row = {
-    StudentID: studentId, Name: p.name, Email: p.email, Password: p.password,
-    Class: p.class || '', Photo: p.photo || '', Status: 'Pending', RegistrationDate: formatDate(new Date())
-  };
-  await dbSet('students/' + studentId, row);
-  return resp(true, 'Registration submitted. Waiting for admin approval.', { studentId });
-}
-
-async function apiStudentLogin(p) {
-  const missing = validateRequired(p, ['email', 'password']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const students = await getAllStudents();
-  const r = students.find((s) => String(s.Email).toLowerCase() === String(p.email).toLowerCase());
-  if (!r) return resp(false, 'No account found with this email.');
-  if (String(r.Password) !== String(p.password)) return resp(false, 'Incorrect password.');
-  if (r.Status !== 'Approved') return resp(false, `Your account status is "${r.Status}". Only approved students can log in.`);
-  return resp(true, 'Login successful.', { studentId: r.StudentID, name: r.Name, email: r.Email, className: r.Class, photo: r.Photo, status: r.Status });
-}
-
-async function apiStudentLogout() { return resp(true, 'Logged out.'); }
-
-async function apiGetStudentProfile(p) {
-  const missing = validateRequired(p, ['studentId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const r = await dbGetOne('students/' + p.studentId);
-  if (!r) return resp(false, 'Student not found.');
-  return resp(true, 'OK', { studentId: r.StudentID, name: r.Name, email: r.Email, className: r.Class, photo: r.Photo, status: r.Status, registrationDate: r.RegistrationDate });
-}
-
-async function apiUpdateStudentProfile(p) {
-  const missing = validateRequired(p, ['studentId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const existing = await dbGetOne('students/' + p.studentId);
-  if (!existing) return resp(false, 'Student not found.');
-  const updates = {};
-  if (!isEmpty(p.name)) updates.Name = p.name;
-  if (!isEmpty(p.class)) updates.Class = p.class;
-  if (!isEmpty(p.photo)) updates.Photo = p.photo;
-  if (!isEmpty(p.password)) updates.Password = p.password;
-  await dbUpdate('students/' + p.studentId, updates);
-  return resp(true, 'Profile updated.');
-}
-
-async function apiGetQuizzes() {
-  const list = await syncQuizSettingsWithTabs();
-  const out = [];
-  for (const q of list) {
-    const settings = await dbGetOne('quizSettings/' + q.key);
-    if (!settings) continue;
-    const published = getEffectiveReviewStatus(settings) === 'Published';
-    const expired = isQuizExpired(settings);
-    if (!published || expired) continue;
-    const questionCount = await quizQuestionCount(q.key);
-    out.push({
-      quizName: settings.QuizName, quizType: settings.QuizType || 'Regular', durationMinutes: settings.DurationMinutes || 30,
-      allowMultipleAttempts: settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE',
-      expiryDate: settings.ExpiryDate || '', expiryTime: settings.ExpiryTime || '', questionCount
-    });
-  }
-  return resp(true, 'OK', { quizzes: out });
-}
-
-async function studentHasAttempted(studentId, quizName) {
-  const results = objToArray(await dbGetAll('results'));
-  return results.some((r) => r.StudentID === studentId && r.QuizName === quizName);
-}
-
-async function apiGetQuizQuestions(p) {
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const settings = await dbGetOne('quizSettings/' + key);
-  if (!settings) return resp(false, 'Quiz not found.');
-  if (getEffectiveReviewStatus(settings) !== 'Published') return resp(false, 'This quiz is not currently published.');
-  if (isQuizExpired(settings)) return resp(false, 'This quiz has expired.');
-
-  const allowMultiple = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
-  if (!allowMultiple && !isEmpty(p.studentId) && await studentHasAttempted(p.studentId, settings.QuizName)) {
-    return resp(false, 'You have already attempted this quiz.');
-  }
-
-  const full = await getQuizQuestionsFull(key);
-  if (full === null) return resp(false, 'Quiz tab not found.');
-
-  const randomizeQ = settings.RandomizeQuestions === true || String(settings.RandomizeQuestions).toUpperCase() === 'TRUE';
-  const randomizeO = settings.RandomizeOptions === true || String(settings.RandomizeOptions).toUpperCase() === 'TRUE';
-
-  let order = full.map((q) => q.index);
-  if (randomizeQ) order = shuffleArray(order);
-
-  const studentQuestions = order.map((idx) => {
-    const q = full.find((f) => f.index === idx);
-    let options = [{ key: 'A', text: q.optionA }, { key: 'B', text: q.optionB }, { key: 'C', text: q.optionC }, { key: 'D', text: q.optionD }];
-    if (randomizeO) options = shuffleArray(options);
-    return { questionIndex: q.index, question: q.question, options };
-  });
-
-  return resp(true, 'OK', {
-    quizName: settings.QuizName, durationMinutes: settings.DurationMinutes || 30, quizType: settings.QuizType || 'Regular',
-    totalQuestions: studentQuestions.length, questions: studentQuestions
-  });
-}
-
-async function apiSubmitQuiz(p) {
-  const missing = validateRequired(p, ['studentId', 'quizName', 'answers']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-
-  const key = await findQuizByName(p.quizName);
-  const settings = await dbGetOne('quizSettings/' + key);
-  if (!settings) return resp(false, 'Quiz not found.');
-
-  const allowMultiple = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
-  if (!allowMultiple && await studentHasAttempted(p.studentId, settings.QuizName)) return resp(false, 'You have already attempted this quiz.');
-
-  const full = await getQuizQuestionsFull(key);
-  if (full === null) return resp(false, 'Quiz tab not found.');
-
-  const answers = typeof p.answers === 'string' ? JSON.parse(p.answers) : p.answers;
-  const answerMap = {};
-  answers.forEach((a) => { answerMap[a.questionIndex] = String(a.selected || '').trim().toUpperCase(); });
-
-  let correctCount = 0, wrongCount = 0;
-  full.forEach((q) => {
-    const given = answerMap.hasOwnProperty(q.index) ? answerMap[q.index] : '';
-    if (given && given === q.correctAnswer) correctCount++; else wrongCount++;
-  });
-
-  const total = full.length;
-  const percentage = total > 0 ? Math.round((correctCount / total) * 10000) / 100 : 0;
-
-  const student = await dbGetOne('students/' + p.studentId);
-  const studentName = student ? student.Name : (p.studentName || 'Unknown');
-
-  const resultId = generateId('RES');
-  const now = new Date();
-  const row = {
-    ResultID: resultId, StudentID: p.studentId, StudentName: studentName, QuizName: settings.QuizName,
-    Score: correctCount, TotalQuestions: total, Percentage: percentage, CorrectAnswers: correctCount,
-    WrongAnswers: wrongCount, Date: formatDate(now), Time: formatTime(now)
-  };
-  await dbSet('results/' + resultId, row);
-
-  return resp(true, 'Quiz submitted successfully.', {
-    resultId, score: correctCount, totalQuestions: total, percentage, correctAnswers: correctCount, wrongAnswers: wrongCount
-  });
-}
-
-async function apiGetStudentResults(p) {
-  const missing = validateRequired(p, ['studentId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const results = objToArray(await dbGetAll('results'));
-  const out = results.filter((r) => r.StudentID === p.studentId).map(stripKey);
-  return resp(true, 'OK', { results: out });
-}
-
-async function apiGetStudentDashboard(p) {
-  const missing = validateRequired(p, ['studentId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-
-  const results = objToArray(await dbGetAll('results'));
-  const mine = results.filter((r) => r.StudentID === p.studentId);
-
-  let totalPercentage = 0, best = null;
-  mine.forEach((r) => {
-    totalPercentage += Number(r.Percentage) || 0;
-    if (best === null || Number(r.Percentage) > Number(best.Percentage)) best = r;
-  });
-  const quizzesTaken = mine.length;
-  const avgPercentage = quizzesTaken > 0 ? Math.round((totalPercentage / quizzesTaken) * 100) / 100 : 0;
-
-  const availableResp = await apiGetQuizzes();
-  const availableQuizCount = availableResp.data.quizzes.length;
-
-  return resp(true, 'OK', {
-    quizzesTaken, averagePercentage: avgPercentage, bestResult: best ? stripKey(best) : null,
-    availableQuizzes: availableQuizCount, recentResults: mine.slice(-5).reverse().map(stripKey)
-  });
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN AUTH
----------------------------------------------------------------------------- */
-async function getAllAdmins() { return objToArray(await dbGetAll('admins')); }
-
-async function apiAdminLogin(p) {
-  const missing = validateRequired(p, ['email', 'password']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const admins = await getAllAdmins();
-  const r = admins.find((a) => String(a.Email).toLowerCase() === String(p.email).toLowerCase());
-  if (!r) return resp(false, 'No admin account found with this email.');
-  if (String(r.Password) !== String(p.password)) return resp(false, 'Incorrect password.');
-  const status = String(r.Status || '').toLowerCase();
-  if (status === 'inactive') return resp(false, 'This admin account is inactive.');
-  if (status === 'pending') return resp(false, 'This admin account is awaiting Super Admin approval.');
-  if (status === 'rejected') return resp(false, 'This admin account was rejected.');
-  return resp(true, 'Login successful.', { adminId: r.AdminID, name: r.Name, email: r.Email, role: r.Role, photo: r.Photo || '', permissions: r.Permissions || '' });
-}
-
-async function requireAdmin(p) {
-  if (isEmpty(p.adminEmail) || isEmpty(p.adminPassword)) return { ok: false, response: resp(false, 'Admin credentials required.') };
-  const admins = await getAllAdmins();
-  const r = admins.find((a) => String(a.Email).toLowerCase() === String(p.adminEmail).toLowerCase() && String(a.Password) === String(p.adminPassword));
-  if (!r) return { ok: false, response: resp(false, 'Unauthorized: invalid admin credentials.') };
-  const status = String(r.Status || '').toLowerCase();
-  if (status === 'inactive') return { ok: false, response: resp(false, 'This admin account is inactive.') };
-  if (status === 'pending') return { ok: false, response: resp(false, 'This admin account is awaiting approval.') };
-  if (status === 'rejected') return { ok: false, response: resp(false, 'This admin account was rejected.') };
-  return { ok: true, admin: r };
-}
-
-async function requireSuperAdmin(p) {
-  const auth = await requireAdmin(p);
-  if (!auth.ok) return auth;
-  if (String(auth.admin.Role || '').toLowerCase().indexOf('super') === -1) {
-    return { ok: false, response: resp(false, 'Unauthorized: Super Admin access required.') };
-  }
-  return auth;
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN: STUDENTS
----------------------------------------------------------------------------- */
-async function apiGetStudents(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const students = await getAllStudents();
-  const out = students.map((s) => { const c = stripKey(s); delete c.Password; return c; });
-  return resp(true, 'OK', { students: out });
-}
-
-async function setStudentStatusInternal(studentId, status) {
-  if (isEmpty(studentId)) return resp(false, 'studentId is required.');
-  const existing = await dbGetOne('students/' + studentId);
-  if (!existing) return resp(false, 'Student not found.');
-  await dbUpdate('students/' + studentId, { Status: status });
-  return resp(true, `Student status updated to "${status}".`);
-}
-async function apiApproveStudent(p) { const auth = await requireAdmin(p); if (!auth.ok) return auth.response; return setStudentStatusInternal(p.studentId, 'Approved'); }
-async function apiRejectStudent(p) { const auth = await requireAdmin(p); if (!auth.ok) return auth.response; return setStudentStatusInternal(p.studentId, 'Rejected'); }
-async function apiSetStudentStatus(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['studentId', 'status']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  return setStudentStatusInternal(p.studentId, p.status);
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN: QUIZZES + REVIEW WORKFLOW
----------------------------------------------------------------------------- */
-async function apiGetAllQuizzesAdmin(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const list = await syncQuizSettingsWithTabs();
-  const out = [];
-  for (const q of list) {
-    const settings = await dbGetOne('quizSettings/' + q.key);
-    const questionCount = await quizQuestionCount(q.key);
-    out.push({ ...settings, questionCount, expired: isQuizExpired(settings), EffectiveReviewStatus: getEffectiveReviewStatus(settings) });
-  }
-  return resp(true, 'OK', { quizzes: out });
-}
-
-async function apiSetQuizActive(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  const active = (p.active === true || String(p.active).toUpperCase() === 'TRUE');
-  await dbUpdate('quizSettings/' + key, { Active: active, ReviewStatus: active ? 'Published' : 'Approved' });
-  return resp(true, active ? 'Quiz published.' : 'Quiz unpublished.');
-}
-
-async function apiSetQuizExpiry(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  const updates = {};
-  if (!isEmpty(p.expiryDate)) updates.ExpiryDate = p.expiryDate;
-  if (!isEmpty(p.expiryTime)) updates.ExpiryTime = p.expiryTime;
-  await dbUpdate('quizSettings/' + key, updates);
-  return resp(true, 'Quiz expiry updated.');
-}
-
-async function apiUpdateQuizSettings(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  const editable = ['Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions'];
-  const updates = {};
-  editable.forEach((h) => {
-    const paramKey = h.charAt(0).toLowerCase() + h.slice(1);
-    if (!isEmpty(p[paramKey])) updates[h] = p[paramKey];
-  });
-  if (Object.keys(updates).length) await dbUpdate('quizSettings/' + key, updates);
-  return resp(true, 'Quiz settings updated.');
-}
-
-async function apiReviewQuiz(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName', 'reviewStatus']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  if (REVIEW_STATUSES.indexOf(p.reviewStatus) === -1) return resp(false, 'Invalid reviewStatus. Must be one of: ' + REVIEW_STATUSES.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  const updates = { ReviewStatus: p.reviewStatus, Active: p.reviewStatus === 'Published' };
-  if (!isEmpty(p.reviewNote)) updates.ReviewNote = p.reviewNote;
-  await dbUpdate('quizSettings/' + key, updates);
-  return resp(true, `Quiz status set to "${p.reviewStatus}".`);
-}
-
-async function apiPublishQuiz(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  await dbUpdate('quizSettings/' + key, { ReviewStatus: 'Published', Active: true });
-  return resp(true, 'Quiz published. Students can now see it.');
-}
-
-async function apiUnpublishQuiz(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  await dbUpdate('quizSettings/' + key, { ReviewStatus: 'Approved', Active: false });
-  return resp(true, 'Quiz unpublished. It is hidden from students but keeps its Approved status.');
-}
-
-async function apiRequestChanges(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const existing = await dbGetOne('quizSettings/' + key);
-  if (!existing) return resp(false, 'Quiz not found.');
-  await dbUpdate('quizSettings/' + key, { ReviewStatus: 'ChangesRequired', Active: false, ReviewNote: p.reviewNote || '' });
-  return resp(true, 'Changes requested.');
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN: RESULTS + ANALYTICS
----------------------------------------------------------------------------- */
-async function apiGetAllResults(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const results = objToArray(await dbGetAll('results')).map(stripKey);
-  return resp(true, 'OK', { results });
-}
-
-async function apiSearchStudentResults(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['query']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const q = String(p.query).toLowerCase();
-  const results = objToArray(await dbGetAll('results'));
-  const out = results.filter((r) => (String(r.StudentName) + ' ' + String(r.StudentID) + ' ' + String(r.QuizName)).toLowerCase().indexOf(q) !== -1).map(stripKey);
-  return resp(true, 'OK', { results: out });
-}
-
-async function apiGetClassAnalytics(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const students = await getAllStudents();
-  const results = objToArray(await dbGetAll('results'));
-  const studentClassMap = {}, classCounts = {};
-  students.forEach((s) => {
-    const cls = s.Class || 'Unassigned';
-    studentClassMap[s.StudentID] = cls;
-    classCounts[cls] = (classCounts[cls] || 0) + 1;
-  });
-  const classStats = {};
-  results.forEach((r) => {
-    const cls = studentClassMap[r.StudentID] || 'Unassigned';
-    if (!classStats[cls]) classStats[cls] = { attempts: 0, totalPct: 0, high: -Infinity, low: Infinity };
-    const pct = Number(r.Percentage) || 0;
-    classStats[cls].attempts++; classStats[cls].totalPct += pct;
-    classStats[cls].high = Math.max(classStats[cls].high, pct);
-    classStats[cls].low = Math.min(classStats[cls].low, pct);
-  });
-  const out = [];
-  for (const cls in classCounts) {
-    const stat = classStats[cls];
-    out.push({
-      className: cls, totalStudents: classCounts[cls], totalAttempts: stat ? stat.attempts : 0,
-      averagePercentage: stat && stat.attempts > 0 ? Math.round((stat.totalPct / stat.attempts) * 100) / 100 : 0,
-      highestPercentage: stat && stat.attempts > 0 ? stat.high : 0, lowestPercentage: stat && stat.attempts > 0 ? stat.low : 0
-    });
-  }
-  return resp(true, 'OK', { classAnalytics: out });
-}
-
-async function apiGetQuizAnalytics(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const results = objToArray(await dbGetAll('results'));
-  const stats = {};
-  results.forEach((r) => {
-    const name = r.QuizName;
-    if (!stats[name]) stats[name] = { attempts: 0, totalPct: 0, high: -Infinity, low: Infinity };
-    const pct = Number(r.Percentage) || 0;
-    stats[name].attempts++; stats[name].totalPct += pct;
-    stats[name].high = Math.max(stats[name].high, pct);
-    stats[name].low = Math.min(stats[name].low, pct);
-  });
-  const out = [];
-  for (const quizName in stats) {
-    const s = stats[quizName];
-    out.push({
-      quizName, totalAttempts: s.attempts, averagePercentage: s.attempts > 0 ? Math.round((s.totalPct / s.attempts) * 100) / 100 : 0,
-      highestPercentage: s.attempts > 0 ? s.high : 0, lowestPercentage: s.attempts > 0 ? s.low : 0
-    });
-  }
-  return resp(true, 'OK', { quizAnalytics: out });
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN: ANNOUNCEMENTS
----------------------------------------------------------------------------- */
-async function apiCreateAnnouncement(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['title', 'message']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const id = generateId('ANN');
-  await dbSet('announcements/' + id, { AnnouncementID: id, Title: p.title, Message: p.message, Date: formatDate(new Date()), Status: p.status || 'Active' });
-  return resp(true, 'Announcement created.', { announcementId: id });
-}
-
-async function apiUpdateAnnouncement(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['announcementId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const existing = await dbGetOne('announcements/' + p.announcementId);
-  if (!existing) return resp(false, 'Announcement not found.');
-  const updates = {};
-  if (!isEmpty(p.title)) updates.Title = p.title;
-  if (!isEmpty(p.message)) updates.Message = p.message;
-  if (!isEmpty(p.status)) updates.Status = p.status;
-  await dbUpdate('announcements/' + p.announcementId, updates);
-  return resp(true, 'Announcement updated.');
-}
-
-async function apiDeleteAnnouncement(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['announcementId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const existing = await dbGetOne('announcements/' + p.announcementId);
-  if (!existing) return resp(false, 'Announcement not found.');
-  await dbRemove('announcements/' + p.announcementId);
-  return resp(true, 'Announcement deleted.');
-}
-
-async function apiGetAnnouncements(p) {
-  let rows = objToArray(await dbGetAll('announcements')).map(stripKey);
-  const authed = !isEmpty(p.adminEmail) && !isEmpty(p.adminPassword) && (await requireAdmin(p)).ok;
-  if (!authed) rows = rows.filter((r) => String(r.Status).toLowerCase() === 'active');
-  return resp(true, 'OK', { announcements: rows });
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN: CONTACTS
----------------------------------------------------------------------------- */
-async function apiGetContacts(p) {
-  let rows = objToArray(await dbGetAll('contacts')).map(stripKey);
-  const authed = !isEmpty(p.adminEmail) && !isEmpty(p.adminPassword) && (await requireAdmin(p)).ok;
-  if (!authed) rows = rows.filter((r) => String(r.Status).toLowerCase() === 'active');
-  return resp(true, 'OK', { contacts: rows });
-}
-
-async function apiCreateContact(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['name']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const id = generateId('CON');
-  await dbSet('contacts/' + id, { ContactID: id, Name: p.name, Role: p.role || '', Phone: p.phone || '', WhatsApp: p.whatsapp || '', Email: p.email || '', Status: p.status || 'Active' });
-  return resp(true, 'Contact created.', { contactId: id });
-}
-
-async function apiUpdateContact(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['contactId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const existing = await dbGetOne('contacts/' + p.contactId);
-  if (!existing) return resp(false, 'Contact not found.');
-  const updates = {};
-  if (!isEmpty(p.name)) updates.Name = p.name;
-  if (!isEmpty(p.role)) updates.Role = p.role;
-  if (!isEmpty(p.phone)) updates.Phone = p.phone;
-  if (!isEmpty(p.whatsapp)) updates.WhatsApp = p.whatsapp;
-  if (!isEmpty(p.email)) updates.Email = p.email;
-  if (!isEmpty(p.status)) updates.Status = p.status;
-  await dbUpdate('contacts/' + p.contactId, updates);
-  return resp(true, 'Contact updated.');
-}
-
-async function apiDeleteContact(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['contactId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const existing = await dbGetOne('contacts/' + p.contactId);
-  if (!existing) return resp(false, 'Contact not found.');
-  await dbRemove('contacts/' + p.contactId);
-  return resp(true, 'Contact deleted.');
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN MANAGEMENT (Super Admin only) + own profile
----------------------------------------------------------------------------- */
-async function apiGetAdmins(p) {
-  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
-  const admins = await getAllAdmins();
-  const out = admins.map((a) => { const c = stripKey(a); delete c.Password; return c; });
-  return resp(true, 'OK', { admins: out });
-}
-
-async function apiCreateAdmin(p) {
-  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['name', 'email', 'password']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const admins = await getAllAdmins();
-  if (admins.some((a) => String(a.Email).toLowerCase() === String(p.email).toLowerCase())) return resp(false, 'An admin with this email already exists.');
-  const id = generateId('ADM');
-  const permissions = Array.isArray(p.permissions) ? p.permissions.join(',') : (p.permissions || '');
-  await dbSet('admins/' + id, { AdminID: id, Name: p.name, Email: p.email, Password: p.password, Role: p.role || 'Admin', Status: 'Pending', Photo: p.photo || '', Permissions: permissions });
-  return resp(true, 'Admin created. It is Pending until approved.', { adminId: id });
-}
-
-async function setAdminStatusInternal(adminId, status) {
-  if (isEmpty(adminId)) return resp(false, 'adminId is required.');
-  const existing = await dbGetOne('admins/' + adminId);
-  if (!existing) return resp(false, 'Admin not found.');
-  await dbUpdate('admins/' + adminId, { Status: status });
-  return resp(true, `Admin status updated to "${status}".`);
-}
-async function apiApproveAdmin(p) { const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response; return setAdminStatusInternal(p.adminId, 'Active'); }
-async function apiRejectAdmin(p) { const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response; return setAdminStatusInternal(p.adminId, 'Rejected'); }
-async function apiSetAdminStatus(p) {
-  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['adminId', 'status']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  return setAdminStatusInternal(p.adminId, p.status);
-}
-
-async function apiUpdateAdminPermissions(p) {
-  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['adminId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const existing = await dbGetOne('admins/' + p.adminId);
-  if (!existing) return resp(false, 'Admin not found.');
-  const permissions = Array.isArray(p.permissions) ? p.permissions.join(',') : (p.permissions || '');
-  const updates = { Permissions: permissions };
-  if (!isEmpty(p.role)) updates.Role = p.role;
-  await dbUpdate('admins/' + p.adminId, updates);
-  return resp(true, 'Permissions updated.');
-}
-
-async function apiRemoveAdmin(p) {
-  const auth = await requireSuperAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['adminId']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  if (auth.admin.AdminID === p.adminId) return resp(false, 'You cannot remove your own account while logged in as it.');
-  const existing = await dbGetOne('admins/' + p.adminId);
-  if (!existing) return resp(false, 'Admin not found.');
-  await dbRemove('admins/' + p.adminId);
-  return resp(true, 'Admin removed.');
-}
-
-async function apiUpdateAdminProfile(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const admins = await getAllAdmins();
-  const target = admins.find((a) => String(a.Email).toLowerCase() === String(auth.admin.Email).toLowerCase());
-  if (!target) return resp(false, 'Admin not found.');
-  const updates = {};
-  if (!isEmpty(p.name)) updates.Name = p.name;
-  if (!isEmpty(p.photo)) updates.Photo = p.photo;
-  if (!isEmpty(p.newPassword)) updates.Password = p.newPassword;
-  await dbUpdate('admins/' + target.AdminID, updates);
-  return resp(true, 'Profile updated.');
-}
-
-/* ----------------------------------------------------------------------------
-   ADMIN: CREATE QUIZ FROM THE PANEL (new — replaces hand-editing the
-   Firebase console). Questions are pasted one-per-line as:
-     Question | OptionA | OptionB | OptionC | OptionD | CorrectAnswer
----------------------------------------------------------------------------- */
-function parseQuestionLines(text) {
-  const lines = String(text || '').split('\n').map((l) => l.replace(/\r$/, '')).filter((l) => l.trim().length > 0);
-  const questions = [];
-  for (let i = 0; i < lines.length; i++) {
-    const raw = lines[i];
-    // Auto-detect the delimiter: pasting cells straight from Google Sheets/Excel
-    // produces TAB-separated values; typed-out lines use "|" as a fallback.
-    let parts;
-    if (raw.indexOf('\t') !== -1) parts = raw.split('\t').map((s) => s.trim());
-    else parts = raw.split('|').map((s) => s.trim());
-
-    // Skip an optional header row (e.g. "Question  Option A  Option B ...")
-    if (i === 0 && /^question$/i.test(parts[0] || '')) continue;
-
-    if (parts.length !== 6) return { error: `Line ${i + 1} is invalid — found ${parts.length} column(s), expected 6 (Question, Option A, Option B, Option C, Option D, Correct Answer). Make sure you copied all 6 columns.` };
-    const [Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswerRaw] = parts;
-    if (isEmpty(Question) || isEmpty(OptionA) || isEmpty(OptionB) || isEmpty(OptionC) || isEmpty(OptionD) || isEmpty(CorrectAnswerRaw)) {
-      return { error: `Line ${i + 1} has an empty column.` };
-    }
-    const CorrectAnswer = CorrectAnswerRaw.trim().toUpperCase();
-    const byLetter = ['A', 'B', 'C', 'D'].indexOf(CorrectAnswer) !== -1;
-    let finalAnswer = CorrectAnswer;
-    if (!byLetter) {
-      // Fallback: the Correct Answer column may contain the option's full text
-      // (e.g. "fine") instead of a letter — match it against OptionA-D and
-      // convert to the matching letter automatically.
-      const optionTexts = { A: OptionA, B: OptionB, C: OptionC, D: OptionD };
-      const match = Object.keys(optionTexts).find((k) => String(optionTexts[k]).trim().toLowerCase() === CorrectAnswerRaw.trim().toLowerCase());
-      if (!match) return { error: `Line ${i + 1}: the Correct Answer column ("${CorrectAnswerRaw}") doesn't match A, B, C, D or any of that row's option text.` };
-      finalAnswer = match;
-    }
-    questions.push({ Question, OptionA, OptionB, OptionC, OptionD, CorrectAnswer: finalAnswer });
-  }
-  return { questions };
-}
-
-async function apiCreateQuiz(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName', 'questionsText']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = toKey(p.quizName);
-  const existingQuiz = await dbGetOne('quizzes/' + key);
-  if (existingQuiz) return resp(false, 'A quiz with this name already exists.');
-  const parsed = parseQuestionLines(p.questionsText);
-  if (parsed.error) return resp(false, parsed.error);
-  if (parsed.questions.length === 0) return resp(false, 'No questions provided.');
-  await dbSet('quizzes/' + key, { name: p.quizName, questions: parsed.questions });
-  await syncQuizSettingsWithTabs();
-  return resp(true, `Quiz created with ${parsed.questions.length} question(s). It is in Draft status — publish it from Quiz Review.`, { quizKey: key });
-}
-
-async function apiAddQuizQuestions(p) {
-  const auth = await requireAdmin(p); if (!auth.ok) return auth.response;
-  const missing = validateRequired(p, ['quizName', 'questionsText']);
-  if (missing.length) return resp(false, 'Missing fields: ' + missing.join(', '));
-  const key = await findQuizByName(p.quizName);
-  const quiz = await dbGetOne('quizzes/' + key);
-  if (!quiz) return resp(false, 'Quiz not found.');
-  const parsed = parseQuestionLines(p.questionsText);
-  if (parsed.error) return resp(false, parsed.error);
-  if (parsed.questions.length === 0) return resp(false, 'No questions provided.');
-  const existingQuestions = Array.isArray(quiz.questions) ? quiz.questions : (quiz.questions ? Object.values(quiz.questions) : []);
-  await dbUpdate('quizzes/' + key, { questions: existingQuestions.concat(parsed.questions) });
-  return resp(true, `${parsed.questions.length} question(s) added.`);
-}
-
-/* ----------------------------------------------------------------------------
-   ROUTER + CORE apiCall (same call signature/response shape as before, so
-   every UI call site below (apiCall(API_ACTIONS.xxx, {...})) keeps working
-   unchanged.
----------------------------------------------------------------------------- */
-const ACTION_HANDLERS = {
-  registerStudent: apiRegisterStudent, studentLogin: apiStudentLogin, studentLogout: apiStudentLogout,
-  getStudentProfile: apiGetStudentProfile, updateStudentProfile: apiUpdateStudentProfile,
-  getQuizzes: apiGetQuizzes, getQuizQuestions: apiGetQuizQuestions, submitQuiz: apiSubmitQuiz,
-  getStudentResults: apiGetStudentResults, getStudentDashboard: apiGetStudentDashboard,
-  adminLogin: apiAdminLogin, getStudents: apiGetStudents, approveStudent: apiApproveStudent,
-  rejectStudent: apiRejectStudent, setStudentStatus: apiSetStudentStatus,
-  getAllQuizzesAdmin: apiGetAllQuizzesAdmin, setQuizActive: apiSetQuizActive, setQuizExpiry: apiSetQuizExpiry,
-  updateQuizSettings: apiUpdateQuizSettings, getAllResults: apiGetAllResults, searchStudentResults: apiSearchStudentResults,
-  getClassAnalytics: apiGetClassAnalytics, getQuizAnalytics: apiGetQuizAnalytics,
-  createAnnouncement: apiCreateAnnouncement, updateAnnouncement: apiUpdateAnnouncement,
-  deleteAnnouncement: apiDeleteAnnouncement, getAnnouncements: apiGetAnnouncements,
-  reviewQuiz: apiReviewQuiz, publishQuiz: apiPublishQuiz, unpublishQuiz: apiUnpublishQuiz, requestChanges: apiRequestChanges,
-  getContacts: apiGetContacts, createContact: apiCreateContact, updateContact: apiUpdateContact, deleteContact: apiDeleteContact,
-  getAdmins: apiGetAdmins, createAdmin: apiCreateAdmin, approveAdmin: apiApproveAdmin, rejectAdmin: apiRejectAdmin,
-  setAdminStatus: apiSetAdminStatus, updateAdminPermissions: apiUpdateAdminPermissions, removeAdmin: apiRemoveAdmin,
-  updateAdminProfile: apiUpdateAdminProfile,
-  createQuiz: apiCreateQuiz, addQuizQuestions: apiAddQuizQuestions
-};
-
 async function apiCall(action, params = {}) {
   try {
-    if (!action) return resp(false, 'Missing "action" parameter');
-    const fn = ACTION_HANDLERS[action];
-    if (!fn) return resp(false, 'Unknown action: ' + action);
-    return await fn(params);
+    const res = await fetch(API_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action, ...params })
+    });
+    const data = await res.json();
+    return data;
   } catch (err) {
-    return resp(false, 'Server error: ' + (err && err.message ? err.message : String(err)));
+    return { success: false, message: 'Network error — could not reach the server. ' + err.message, data: {} };
   }
 }
-
 
 /* ----------------------------------------------------------------------------
    TOASTS
@@ -1032,16 +225,18 @@ const Session = {
    ROUTER
    ============================================================================ */
 const PUBLIC_SECTIONS = ['home', 'contact', 'student-login', 'student-register', 'admin-login'];
-const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-profile', 'student-contact'];
-const ADMIN_SECTIONS = ['admin-dashboard', 'admin-students', 'admin-quizzes', 'admin-review', 'admin-results', 'admin-analytics', 'admin-announcements', 'admin-contacts', 'admin-management', 'admin-profile'];
+const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-leaderboard', 'student-notifications', 'student-certificates', 'student-profile', 'student-contact'];
+const ADMIN_SECTIONS = ['admin-dashboard', 'admin-students', 'admin-quizzes', 'admin-review', 'admin-results', 'admin-leaderboard', 'admin-analytics', 'admin-announcements', 'admin-notifications', 'admin-certificates', 'admin-performance', 'admin-contacts', 'admin-management', 'admin-profile'];
 
 const STUDENT_TITLES = {
   'student-dashboard': 'Dashboard', 'student-quizzes': 'Available Quizzes', 'student-attempt': 'Quiz in Progress',
-  'student-results': 'Results', 'student-history': 'Quiz History', 'student-profile': 'Profile', 'student-contact': 'Contact'
+  'student-results': 'Results', 'student-history': 'Quiz History', 'student-leaderboard': 'Leaderboard',
+  'student-notifications': 'Notifications', 'student-certificates': 'Certificates', 'student-profile': 'Profile', 'student-contact': 'Contact'
 };
 const ADMIN_TITLES = {
   'admin-dashboard': 'Dashboard', 'admin-students': 'Students', 'admin-quizzes': 'Quizzes', 'admin-review': 'Quiz Review',
-  'admin-results': 'Results', 'admin-analytics': 'Analytics', 'admin-announcements': 'Announcements',
+  'admin-results': 'Results', 'admin-leaderboard': 'Leaderboard', 'admin-analytics': 'Analytics', 'admin-announcements': 'Announcements',
+  'admin-notifications': 'Notifications', 'admin-certificates': 'Certificates', 'admin-performance': 'Student Performance',
   'admin-contacts': 'Contacts', 'admin-management': 'Admin Management', 'admin-profile': 'My Profile'
 };
 
@@ -1075,14 +270,18 @@ async function navigate(name) {
     const map = {
       'student-dashboard': 'studentSectionDashboard', 'student-quizzes': 'studentSectionQuizzes',
       'student-attempt': 'studentSectionAttempt', 'student-results': 'studentSectionResults',
-      'student-history': 'studentSectionHistory', 'student-profile': 'studentSectionProfile',
-      'student-contact': 'studentSectionContact'
+      'student-history': 'studentSectionHistory', 'student-leaderboard': 'studentSectionLeaderboard',
+      'student-notifications': 'studentSectionNotifications', 'student-certificates': 'studentSectionCertificates',
+      'student-profile': 'studentSectionProfile', 'student-contact': 'studentSectionContact'
     };
     document.getElementById(map[name]).classList.remove('hidden');
     if (name === 'student-dashboard') loadStudentDashboard();
     if (name === 'student-quizzes') loadStudentQuizzes();
     if (name === 'student-results') loadStudentResults();
     if (name === 'student-history') loadStudentHistory();
+    if (name === 'student-leaderboard') loadStudentLeaderboard();
+    if (name === 'student-notifications') loadStudentNotifications();
+    if (name === 'student-certificates') loadStudentCertificates();
     if (name === 'student-profile') loadStudentProfile();
     if (name === 'student-contact') renderContactCards('contactCardsStudent');
     window.scrollTo(0, 0);
@@ -1102,8 +301,11 @@ async function navigate(name) {
     const map = {
       'admin-dashboard': 'adminSectionDashboard', 'admin-students': 'adminSectionStudents',
       'admin-quizzes': 'adminSectionQuizzes', 'admin-review': 'adminSectionReview',
-      'admin-results': 'adminSectionResults', 'admin-analytics': 'adminSectionAnalytics',
-      'admin-announcements': 'adminSectionAnnouncements', 'admin-contacts': 'adminSectionContacts',
+      'admin-results': 'adminSectionResults', 'admin-leaderboard': 'adminSectionLeaderboard',
+      'admin-analytics': 'adminSectionAnalytics',
+      'admin-announcements': 'adminSectionAnnouncements', 'admin-notifications': 'adminSectionNotifications',
+      'admin-certificates': 'adminSectionCertificates',
+      'admin-performance': 'adminSectionPerformance', 'admin-contacts': 'adminSectionContacts',
       'admin-management': 'adminSectionAdmins', 'admin-profile': 'adminSectionProfile'
     };
     document.getElementById(map[name]).classList.remove('hidden');
@@ -1112,8 +314,11 @@ async function navigate(name) {
     if (name === 'admin-quizzes') loadAdminQuizzes();
     if (name === 'admin-review') loadAdminReview();
     if (name === 'admin-results') loadAdminResults();
+    if (name === 'admin-leaderboard') loadAdminLeaderboard();
     if (name === 'admin-analytics') loadAdminAnalytics();
     if (name === 'admin-announcements') loadAdminAnnouncements();
+    if (name === 'admin-notifications') loadAdminNotifications();
+    if (name === 'admin-certificates') loadAdminCertificates();
     if (name === 'admin-contacts') loadAdminContacts();
     if (name === 'admin-management') loadAdminManagement();
     if (name === 'admin-profile') loadAdminProfile();
@@ -1236,6 +441,8 @@ document.getElementById('studentLoginForm').addEventListener('submit', async (e)
     e.target.reset();
     applyStudentSessionToUI();
     navigate('student-dashboard');
+    requestNotificationPermission();
+    startNotificationPolling();
   } else {
     errEl.textContent = res.message || 'Login failed.';
     errEl.classList.remove('hidden');
@@ -1255,6 +462,7 @@ document.getElementById('studentLogoutBtn').addEventListener('click', async () =
   if (!ok) return;
   await apiCall(API_ACTIONS.studentLogout, {});
   Session.clearStudent();
+  stopNotificationPolling();
   toast('Logged out.', 'default');
   navigate('student-login');
 });
@@ -1338,7 +546,7 @@ document.getElementById('refreshQuizzesBtn').addEventListener('click', loadStude
    ============================================================================ */
 const Attempt = {
   quizName: '', questions: [], answers: {}, review: {}, index: 0,
-  durationSeconds: 0, remainingSeconds: 0, timerHandle: null
+  durationSeconds: 0, remainingSeconds: 0, timerHandle: null, startedAt: 0
 };
 
 async function startQuizAttempt(quizName) {
@@ -1354,6 +562,7 @@ async function startQuizAttempt(quizName) {
   Attempt.index = 0;
   Attempt.durationSeconds = (d.durationMinutes || 30) * 60;
   Attempt.remainingSeconds = Attempt.durationSeconds;
+  Attempt.startedAt = Date.now();
 
   document.getElementById('attemptQuizName').textContent = quizName;
   document.getElementById('attemptStudentInfo').textContent = `${s.name} — ${s.className || ''}`;
@@ -1448,16 +657,27 @@ async function finishAttempt(auto) {
   clearInterval(Attempt.timerHandle);
   const s = Session.getStudent();
   const answers = Attempt.questions.map(q => ({ questionIndex: q.questionIndex, selected: Attempt.answers[q.questionIndex] || '' }));
-  const res = await apiCall(API_ACTIONS.submitQuiz, { studentId: s.studentId, quizName: Attempt.quizName, answers: JSON.stringify(answers) });
+  const timeTakenSeconds = Math.max(Math.round((Date.now() - Attempt.startedAt) / 1000), 0);
+  const res = await apiCall(API_ACTIONS.submitQuiz, {
+    studentId: s.studentId, quizName: Attempt.quizName, answers: JSON.stringify(answers), timeTakenSeconds
+  });
 
   if (!res.success) {
     toast(res.message || 'Could not submit your quiz. Please try again.', 'error');
     return;
   }
-  showResultModal(res.data, Attempt.quizName);
+
+  // Check the freshly-updated leaderboard to see if this attempt landed at #1.
+  let isTopScore = false;
+  const lbRes = await apiCall(API_ACTIONS.getLeaderboard, { quizName: Attempt.quizName });
+  if (lbRes.success) {
+    const top = (lbRes.data.leaderboard || [])[0];
+    isTopScore = !!top && top.resultId === res.data.resultId;
+  }
+  showResultModal(res.data, Attempt.quizName, isTopScore);
 }
 
-function showResultModal(d, quizName) {
+function showResultModal(d, quizName, isTopScore) {
   document.getElementById('resultQuizName').textContent = quizName;
   document.getElementById('resultScore').textContent = d.score;
   document.getElementById('resultCorrect').textContent = d.correctAnswers;
@@ -1470,12 +690,83 @@ function showResultModal(d, quizName) {
   const offset = circumference - (Math.min(Math.max(d.percentage, 0), 100) / 100) * circumference;
   fillEl.style.strokeDasharray = String(circumference);
   fillEl.style.strokeDashoffset = String(offset);
+
+  const celebrationEl = document.getElementById('resultCelebration');
+  celebrationEl.classList.toggle('hidden', !isTopScore);
+  if (isTopScore) fireConfetti();
+
+  const stampHost = document.getElementById('resultStamp');
+  if (stampHost) stampHost.innerHTML = navyStampSVG(72);
+
   openModal('resultModal');
 }
 document.getElementById('resultCloseBtn').addEventListener('click', () => {
   closeModal('resultModal');
   navigate('student-dashboard');
 });
+document.getElementById('resultScreenshotBtn').addEventListener('click', () => {
+  downloadElementAsImage('resultCaptureArea', `${Attempt.quizName || 'quiz-result'}.png`);
+});
+
+/* ============================================================================
+   SCREENSHOT / CONFETTI HELPERS
+   ============================================================================ */
+// "Download as image" stands in for a real device screenshot, which no
+// website can trigger directly — this captures the given element and saves
+// it as a PNG the person can view, keep, or share.
+async function downloadElementAsImage(elementId, filename) {
+  const el = document.getElementById(elementId);
+  if (!el || typeof html2canvas === 'undefined') { toast('Screenshot tool did not load — check your connection.', 'error'); return; }
+  try {
+    const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 });
+    const link = document.createElement('a');
+    link.download = filename;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } catch (err) {
+    toast('Could not generate the image.', 'error');
+  }
+}
+async function elementToImageDataUrl(elementId) {
+  const el = document.getElementById(elementId);
+  const canvas = await html2canvas(el, { backgroundColor: '#ffffff', scale: 2 });
+  return canvas.toDataURL('image/png');
+}
+
+function fireConfetti() {
+  let canvas = document.getElementById('confettiCanvas');
+  if (!canvas) {
+    canvas = document.createElement('canvas');
+    canvas.id = 'confettiCanvas';
+    document.body.appendChild(canvas);
+  }
+  canvas.width = window.innerWidth; canvas.height = window.innerHeight;
+  const ctx = canvas.getContext('2d');
+  const colors = ['#2563EB', '#60A5FA', '#FBBF24', '#34D399', '#F87171'];
+  const pieces = Array.from({ length: 120 }, () => ({
+    x: Math.random() * canvas.width, y: -20 - Math.random() * canvas.height * 0.3,
+    size: 5 + Math.random() * 6, color: colors[Math.floor(Math.random() * colors.length)],
+    speedY: 2 + Math.random() * 3, speedX: -1.5 + Math.random() * 3, rotation: Math.random() * 360, spin: -8 + Math.random() * 16
+  }));
+  let frame = 0;
+  const maxFrames = 150;
+  function tick() {
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    pieces.forEach(pc => {
+      pc.x += pc.speedX; pc.y += pc.speedY; pc.rotation += pc.spin;
+      ctx.save();
+      ctx.translate(pc.x, pc.y);
+      ctx.rotate(pc.rotation * Math.PI / 180);
+      ctx.fillStyle = pc.color;
+      ctx.fillRect(-pc.size / 2, -pc.size / 2, pc.size, pc.size * 0.6);
+      ctx.restore();
+    });
+    frame++;
+    if (frame < maxFrames) requestAnimationFrame(tick);
+    else ctx.clearRect(0, 0, canvas.width, canvas.height);
+  }
+  requestAnimationFrame(tick);
+}
 
 /* ============================================================================
    STUDENT: RESULTS / HISTORY
@@ -1486,7 +777,7 @@ async function loadStudentResults() {
   el.innerHTML = `<div class="empty-state">Loading…</div>`;
   const res = await apiCall(API_ACTIONS.getStudentResults, { studentId: s.studentId });
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
-  el.innerHTML = renderFullResultsTable(res.data.results);
+  renderResultCards(el, res.data.results);
 }
 async function loadStudentHistory() {
   const s = Session.getStudent();
@@ -1495,21 +786,47 @@ async function loadStudentHistory() {
   const res = await apiCall(API_ACTIONS.getStudentResults, { studentId: s.studentId });
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   const sorted = (res.data.results || []).slice().sort((a, b) => new Date(b.Date + ' ' + (b.Time || '')) - new Date(a.Date + ' ' + (a.Time || '')));
-  el.innerHTML = renderFullResultsTable(sorted);
+  renderResultCards(el, sorted);
 }
-function renderFullResultsTable(rows) {
-  if (!rows || rows.length === 0) return `<div class="empty-state"><h4>No results yet</h4><p>Your quiz attempts will show up here.</p></div>`;
-  return `<table><thead><tr><th>Quiz</th><th>Score</th><th>Correct</th><th>Wrong</th><th>Percentage</th><th>Date</th><th>Time</th></tr></thead><tbody>
-    ${rows.map(r => `<tr>
-      <td>${escapeHtml(r.QuizName)}</td>
-      <td>${escapeHtml(r.Score)}/${escapeHtml(r.TotalQuestions)}</td>
-      <td>${escapeHtml(r.CorrectAnswers)}</td>
-      <td>${escapeHtml(r.WrongAnswers)}</td>
-      <td>${fmtPct(r.Percentage)}</td>
-      <td>${escapeHtml(r.Date)}</td>
-      <td>${escapeHtml(r.Time)}</td>
-    </tr>`).join('')}
-  </tbody></table>`;
+
+// Each quiz result gets its own card (per the brief) with a Download
+// Screenshot button underneath it, powered by html2canvas.
+function renderResultCards(container, rows) {
+  if (!rows || rows.length === 0) { container.innerHTML = `<div class="empty-state"><h4>No results yet</h4><p>Your quiz attempts will show up here.</p></div>`; return; }
+  container.className = 'result-cards';
+  container.innerHTML = rows.map((r, i) => {
+    const cardId = `resultCard-${i}-${r.ResultID}`;
+    return `
+    <div class="result-card" id="${cardId}" style="position:relative;">
+      <div class="result-card-stamp">${navyStampSVG(76)}</div>
+      <div class="result-card-top">
+        <div>
+          <h4>${escapeHtml(r.QuizName)}</h4>
+          <time>${escapeHtml(r.Date)} · ${escapeHtml(r.Time)}</time>
+        </div>
+        <div class="result-card-pct">${fmtPct(r.Percentage)}</div>
+      </div>
+      <div class="result-card-meta">
+        <span><strong>${escapeHtml(r.Score)}</strong>/${escapeHtml(r.TotalQuestions)} score</span>
+        <span><strong>${escapeHtml(r.CorrectAnswers)}</strong> correct</span>
+        <span><strong>${escapeHtml(r.WrongAnswers)}</strong> wrong</span>
+        ${!isEmptyVal(r.TimeTakenSeconds) ? `<span><strong>${formatDuration(r.TimeTakenSeconds)}</strong> taken</span>` : ''}
+      </div>
+      <div class="result-card-actions">
+        <button class="btn btn-outline btn-sm" data-screenshot="${cardId}" data-filename="${escapeHtml(r.QuizName)}-result.png">Download Screenshot</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  container.querySelectorAll('[data-screenshot]').forEach(btn => {
+    btn.addEventListener('click', () => downloadElementAsImage(btn.dataset.screenshot, btn.dataset.filename));
+  });
+}
+function isEmptyVal(v) { return v === undefined || v === null || v === ''; }
+function formatDuration(totalSeconds) {
+  const s = Number(totalSeconds) || 0;
+  const m = Math.floor(s / 60), sec = s % 60;
+  return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
 
 /* ============================================================================
@@ -1606,7 +923,9 @@ function applyAdminRoleVisibility(role, permissionsStr) {
   const perms = String(permissionsStr || '').split(',').map(s => s.trim()).filter(Boolean);
   const sectionToPerm = {
     'admin-students': 'students', 'admin-quizzes': 'quizzes', 'admin-review': 'review',
-    'admin-results': 'results', 'admin-analytics': 'analytics', 'admin-announcements': 'announcements',
+    'admin-results': 'results', 'admin-leaderboard': 'results', 'admin-analytics': 'analytics',
+    'admin-announcements': 'announcements', 'admin-notifications': 'announcements',
+    'admin-certificates': 'students',
     'admin-contacts': 'contacts', 'admin-management': 'admins'
   };
   document.querySelectorAll('#adminNav a').forEach(a => {
@@ -1721,13 +1040,17 @@ function renderStudentsTable() {
           ${s.Status !== 'Rejected' ? `<button class="btn btn-danger btn-sm" data-action="reject" data-id="${escapeHtml(s.StudentID)}">Reject</button>` : ''}
           ${s.Status === 'Approved' ? `<button class="btn btn-outline btn-sm" data-action="deactivate" data-id="${escapeHtml(s.StudentID)}">Deactivate</button>` : ''}
           ${s.Status === 'Deactivated' ? `<button class="btn btn-outline btn-sm" data-action="approve" data-id="${escapeHtml(s.StudentID)}">Reactivate</button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-action="performance" data-id="${escapeHtml(s.StudentID)}">View Performance</button>
         </td>
       </tr>
     `).join('')}
   </tbody></table>`;
 
-  el.querySelectorAll('[data-action]').forEach(btn => {
+  el.querySelectorAll('[data-action]:not([data-action="performance"])').forEach(btn => {
     btn.addEventListener('click', () => handleStudentAction(btn.dataset.action, btn.dataset.id));
+  });
+  el.querySelectorAll('[data-action="performance"]').forEach(btn => {
+    btn.addEventListener('click', () => { navigate('admin-performance'); loadStudentPerformance(btn.dataset.id); });
   });
 }
 
@@ -1779,7 +1102,8 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
         <td class="row-actions">
           <button class="btn btn-outline btn-sm" data-action="toggle" data-name="${escapeHtml(q.QuizName)}" data-active="${isActive}">${isActive ? 'Unpublish' : 'Publish'}</button>
           <button class="btn btn-ghost btn-sm" data-action="settings" data-name="${escapeHtml(q.QuizName)}">Settings</button>
-          <button class="btn btn-ghost btn-sm" data-action="addquestions" data-name="${escapeHtml(q.QuizName)}">+ Questions</button>
+          <button class="btn btn-ghost btn-sm" data-action="edit-questions" data-name="${escapeHtml(q.QuizName)}">Edit Questions</button>
+          <button class="btn btn-danger btn-sm" data-action="delete" data-name="${escapeHtml(q.QuizName)}">Delete</button>
         </td>
       </tr>`;
     }).join('')}
@@ -1796,56 +1120,25 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   el.querySelectorAll('[data-action="settings"]').forEach(btn => {
     btn.addEventListener('click', () => openQuizSettingsModal(btn.dataset.name, quizzes.find(q => q.QuizName === btn.dataset.name)));
   });
-  el.querySelectorAll('[data-action="addquestions"]').forEach(btn => {
-    btn.addEventListener('click', () => openAddQuizModal('append', btn.dataset.name));
+  el.querySelectorAll('[data-action="edit-questions"]').forEach(btn => {
+    btn.addEventListener('click', () => openQuestionEditor(btn.dataset.name));
+  });
+  el.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', () => handleDeleteQuiz(btn.dataset.name, targetId));
   });
 }
 document.getElementById('refreshAdminQuizzesBtn').addEventListener('click', () => loadAdminQuizzes());
 
-/* ============================================================================
-   ADMIN: ADD QUIZ / ADD QUESTIONS MODAL
-   ============================================================================ */
-let addQuizMode = 'create'; // 'create' | 'append'
-
-function openAddQuizModal(mode, quizName) {
-  addQuizMode = mode;
-  const form = document.getElementById('addQuizForm');
-  form.reset();
-  document.getElementById('addQuizError').classList.add('hidden');
-  const nameInput = document.getElementById('addQuizName');
-  if (mode === 'append') {
-    document.getElementById('addQuizModalTitle').textContent = 'Add Questions — ' + quizName;
-    nameInput.value = quizName;
-    nameInput.readOnly = true;
-  } else {
-    document.getElementById('addQuizModalTitle').textContent = 'Add Quiz';
-    nameInput.value = '';
-    nameInput.readOnly = false;
-  }
-  openModal('addQuizModal');
+// Destructive — the admin must type the exact quiz name to confirm, and can
+// choose whether to also wipe every logged Result for that quiz.
+async function handleDeleteQuiz(quizName, targetId) {
+  const typed = prompt(`This permanently deletes the "${quizName}" quiz tab and its settings.\nType the quiz name exactly to confirm:`);
+  if (typed !== quizName) { if (typed !== null) toast('Name did not match — nothing deleted.', 'warning'); return; }
+  const alsoResults = await confirmModal('Also delete its results?', 'Choose Confirm to also erase every student result logged for this quiz, or Cancel to keep results but delete the quiz.');
+  const res = await apiCall(API_ACTIONS.deleteQuiz, { quizName, deleteResults: alsoResults, ...adminAuthParams() });
+  if (res.success) { toast('Quiz deleted.', 'success'); loadAdminQuizzes(targetId); }
+  else toast(res.message || 'Could not delete quiz.', 'error');
 }
-document.getElementById('newQuizBtn').addEventListener('click', () => openAddQuizModal('create', ''));
-document.getElementById('addQuizCancelBtn').addEventListener('click', () => closeModal('addQuizModal'));
-document.getElementById('addQuizForm').addEventListener('submit', async (e) => {
-  e.preventDefault();
-  const errEl = document.getElementById('addQuizError');
-  errEl.classList.add('hidden');
-  const quizName = document.getElementById('addQuizName').value.trim();
-  const questionsText = document.getElementById('addQuizQuestionsText').value;
-  const btn = document.getElementById('addQuizSaveBtn');
-  setBtnLoading(btn, true);
-  const action = addQuizMode === 'append' ? API_ACTIONS.addQuizQuestions : API_ACTIONS.createQuiz;
-  const res = await apiCall(action, { quizName, questionsText, ...adminAuthParams() });
-  setBtnLoading(btn, false);
-  if (res.success) {
-    toast(res.message || 'Saved.', 'success');
-    closeModal('addQuizModal');
-    loadAdminQuizzes();
-  } else {
-    errEl.textContent = res.message || 'Could not save.';
-    errEl.classList.remove('hidden');
-  }
-});
 
 function openQuizSettingsModal(quizName, settings) {
   document.getElementById('quizSettingsName').textContent = quizName;
@@ -1882,6 +1175,143 @@ document.getElementById('quizSettingsForm').addEventListener('submit', async (e)
     closeModal('quizSettingsModal');
     loadAdminQuizzes(); loadAdminQuizzes('adminReviewTable');
   } else toast(res.message || 'Could not save settings.', 'error');
+});
+
+/* ============================================================================
+   ADMIN: QUIZ QUESTION EDITOR — create a new quiz, or edit/add/delete the
+   questions inside an existing one. Also supports pasting bulk rows.
+   ============================================================================ */
+let qeMode = 'create'; // 'create' | 'edit'
+let qeEditingQuizName = '';
+let qeRows = []; // [{question, optionA, optionB, optionC, optionD, correctAnswer}]
+
+function openQuestionEditor(quizName) {
+  const nameField = document.getElementById('qeQuizNameField');
+  const nameInput = document.getElementById('qeQuizName');
+  if (quizName) {
+    qeMode = 'edit';
+    qeEditingQuizName = quizName;
+    document.getElementById('questionEditorTitle').textContent = 'Edit Questions — ' + quizName;
+    nameField.classList.add('hidden');
+    nameInput.value = quizName;
+    qeRows = [];
+    renderQeRows();
+    document.getElementById('qeQuestionRows').innerHTML = `<div class="empty-state">Loading questions…</div>`;
+    apiCall(API_ACTIONS.getQuizQuestionsAdmin, { quizName, ...adminAuthParams() }).then(res => {
+      if (!res.success) { toast(res.message || 'Could not load questions.', 'error'); closeModal('questionEditorModal'); return; }
+      qeRows = res.data.questions.length > 0 ? res.data.questions : [blankQeRow()];
+      renderQeRows();
+    });
+  } else {
+    qeMode = 'create';
+    qeEditingQuizName = '';
+    document.getElementById('questionEditorTitle').textContent = 'Create New Quiz';
+    nameField.classList.remove('hidden');
+    nameInput.value = '';
+    qeRows = [blankQeRow()];
+    renderQeRows();
+  }
+  document.getElementById('qeBulkText').value = '';
+  openModal('questionEditorModal');
+}
+document.getElementById('newQuizBtn').addEventListener('click', () => openQuestionEditor(null));
+document.getElementById('questionEditorCancelBtn').addEventListener('click', () => closeModal('questionEditorModal'));
+
+function blankQeRow() { return { question: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswer: 'A' }; }
+
+function renderQeRows() {
+  const container = document.getElementById('qeQuestionRows');
+  container.innerHTML = qeRows.map((q, i) => `
+    <div class="qe-row" data-index="${i}">
+      ${qeRows.length > 1 ? `<button type="button" class="btn btn-ghost btn-sm qe-remove-btn" data-remove="${i}">✕</button>` : ''}
+      <div class="qe-row-head"><strong>Question ${i + 1}</strong></div>
+      <textarea rows="2" placeholder="Question text" data-field="question" data-index="${i}">${escapeHtml(q.question)}</textarea>
+      <div class="qe-options-grid">
+        <label>A <input type="text" placeholder="Option A" data-field="optionA" data-index="${i}" value="${escapeHtml(q.optionA)}"></label>
+        <label>B <input type="text" placeholder="Option B" data-field="optionB" data-index="${i}" value="${escapeHtml(q.optionB)}"></label>
+        <label>C <input type="text" placeholder="Option C" data-field="optionC" data-index="${i}" value="${escapeHtml(q.optionC)}"></label>
+        <label>D <input type="text" placeholder="Option D" data-field="optionD" data-index="${i}" value="${escapeHtml(q.optionD)}"></label>
+      </div>
+      <div class="qe-correct-row">
+        <span>Correct answer:</span>
+        <select data-field="correctAnswer" data-index="${i}">
+          ${['A', 'B', 'C', 'D'].map(l => `<option value="${l}" ${q.correctAnswer === l ? 'selected' : ''}>${l}</option>`).join('')}
+        </select>
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-field]').forEach(input => {
+    input.addEventListener('input', (e) => {
+      qeRows[Number(e.target.dataset.index)][e.target.dataset.field] = e.target.value;
+    });
+  });
+  container.querySelectorAll('[data-remove]').forEach(btn => {
+    btn.addEventListener('click', () => { qeRows.splice(Number(btn.dataset.remove), 1); renderQeRows(); });
+  });
+}
+
+document.getElementById('qeAddRowBtn').addEventListener('click', () => {
+  qeRows.push(blankQeRow());
+  renderQeRows();
+  document.getElementById('qeQuestionRows').scrollTop = document.getElementById('qeQuestionRows').scrollHeight;
+});
+
+// Parses "Question | OptA | OptB | OptC | OptD | CorrectLetter" per line and
+// appends them as new rows — the fast path for uploading many questions at once.
+document.getElementById('qeBulkImportBtn').addEventListener('click', () => {
+  const raw = document.getElementById('qeBulkText').value;
+  const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
+  if (lines.length === 0) { toast('Paste at least one question line first.', 'warning'); return; }
+
+  let added = 0, skipped = 0;
+  const parsed = [];
+  lines.forEach(line => {
+    const parts = line.split('|').map(s => s.trim());
+    if (parts.length !== 6 || ['A', 'B', 'C', 'D'].indexOf(parts[5].toUpperCase()) === -1) { skipped++; return; }
+    parsed.push({ question: parts[0], optionA: parts[1], optionB: parts[2], optionC: parts[3], optionD: parts[4], correctAnswer: parts[5].toUpperCase() });
+    added++;
+  });
+
+  if (added === 0) { toast('No valid rows found. Check the format: 6 fields separated by |.', 'error'); return; }
+  // Replace a single still-empty starter row if present, otherwise append.
+  if (qeRows.length === 1 && !qeRows[0].question) qeRows = parsed;
+  else qeRows = qeRows.concat(parsed);
+  renderQeRows();
+  document.getElementById('qeBulkText').value = '';
+  toast(`Added ${added} question(s)${skipped > 0 ? `, skipped ${skipped} malformed line(s)` : ''}.`, 'success');
+});
+
+document.getElementById('questionEditorForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('questionEditorSaveBtn');
+
+  const cleaned = qeRows.filter(q => q.question.trim());
+  if (cleaned.length === 0) { toast('Add at least one complete question.', 'error'); return; }
+  for (let i = 0; i < cleaned.length; i++) {
+    const q = cleaned[i];
+    if (!q.optionA.trim() || !q.optionB.trim() || !q.optionC.trim() || !q.optionD.trim()) {
+      toast(`Question ${i + 1} is missing an option.`, 'error');
+      return;
+    }
+  }
+
+  setBtnLoading(btn, true);
+  let res;
+  if (qeMode === 'create') {
+    const quizName = document.getElementById('qeQuizName').value.trim();
+    if (!quizName) { setBtnLoading(btn, false); toast('Enter a quiz name.', 'error'); return; }
+    res = await apiCall(API_ACTIONS.createQuiz, { quizName, questions: JSON.stringify(cleaned), ...adminAuthParams() });
+  } else {
+    res = await apiCall(API_ACTIONS.updateQuizQuestions, { quizName: qeEditingQuizName, questions: JSON.stringify(cleaned), ...adminAuthParams() });
+  }
+  setBtnLoading(btn, false);
+
+  if (res.success) {
+    toast(res.message || 'Saved.', 'success');
+    closeModal('questionEditorModal');
+    loadAdminQuizzes(); loadAdminQuizzes('adminReviewTable');
+  } else toast(res.message || 'Could not save the quiz.', 'error');
 });
 
 /* ============================================================================
@@ -1982,7 +1412,7 @@ async function loadAdminResults() {
 function renderAdminResultsTable(rows) {
   const el = document.getElementById('adminResultsTable');
   if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No results yet</h4></div>`; return; }
-  el.innerHTML = `<table><thead><tr><th>Student</th><th>Quiz</th><th>Score</th><th>Percentage</th><th>Date</th><th>Time</th></tr></thead><tbody>
+  el.innerHTML = `<table><thead><tr><th>Student</th><th>Quiz</th><th>Score</th><th>Percentage</th><th>Date</th><th>Time</th><th>Actions</th></tr></thead><tbody>
     ${rows.map(r => `<tr>
       <td>${escapeHtml(r.StudentName)}</td>
       <td>${escapeHtml(r.QuizName)}</td>
@@ -1990,8 +1420,45 @@ function renderAdminResultsTable(rows) {
       <td>${fmtPct(r.Percentage)}</td>
       <td>${escapeHtml(r.Date)}</td>
       <td>${escapeHtml(r.Time)}</td>
+      <td class="row-actions">
+        <button class="btn btn-outline btn-sm" data-action="edit-result" data-id="${escapeHtml(r.ResultID)}">Edit</button>
+        <button class="btn btn-danger btn-sm" data-action="delete-result" data-id="${escapeHtml(r.ResultID)}">Delete</button>
+      </td>
     </tr>`).join('')}
   </tbody></table>`;
+
+  el.querySelectorAll('[data-action="delete-result"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirmModal('Delete this result?', 'This permanently removes the student\'s attempt from Results. This cannot be undone.');
+      if (!ok) return;
+      const res = await apiCall(API_ACTIONS.deleteResult, { resultId: btn.dataset.id, ...adminAuthParams() });
+      if (res.success) { toast('Result deleted.', 'success'); loadAdminResults(); }
+      else toast(res.message || 'Could not delete result.', 'error');
+    });
+  });
+  el.querySelectorAll('[data-action="edit-result"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const r = rows.find(x => x.ResultID === btn.dataset.id);
+      openResultEditModal(r);
+    });
+  });
+}
+
+function openResultEditModal(r) {
+  const correct = prompt(`Correct answers for ${r.StudentName} — ${r.QuizName}\n(out of ${r.TotalQuestions} total questions):`, r.CorrectAnswers);
+  if (correct === null) return;
+  const total = prompt('Total questions (leave as-is unless the quiz changed):', r.TotalQuestions);
+  if (total === null) return;
+  const correctNum = Number(correct), totalNum = Number(total);
+  if (isNaN(correctNum) || isNaN(totalNum) || correctNum < 0 || totalNum <= 0 || correctNum > totalNum) {
+    toast('Enter valid numbers (correct answers cannot exceed total questions).', 'error');
+    return;
+  }
+  apiCall(API_ACTIONS.updateResult, { resultId: r.ResultID, correctAnswers: correctNum, totalQuestions: totalNum, ...adminAuthParams() })
+    .then(res => {
+      if (res.success) { toast('Result updated.', 'success'); loadAdminResults(); }
+      else toast(res.message || 'Could not update result.', 'error');
+    });
 }
 document.getElementById('resultsSearchInput').addEventListener('input', debounce(async (e) => {
   const q = e.target.value.trim();
@@ -2349,13 +1816,551 @@ document.getElementById('adminProfileForm').addEventListener('submit', async (e)
 });
 
 /* ============================================================================
+   NAVY STAMP (SVG, vector — always crisp, never blurry, at any zoom/print size)
+   Reused on certificates and on result receipts, per the brief.
+   ============================================================================ */
+let stampSeq = 0;
+function navyStampSVG(size = 130) {
+  const id = `stamp-${Date.now()}-${stampSeq++}`;
+  const r = size / 2;
+  return `
+  <svg class="navy-stamp" width="${size}" height="${size}" viewBox="0 0 130 130" xmlns="http://www.w3.org/2000/svg">
+    <defs>
+      <path id="${id}-top" d="M 15,65 A 50,50 0 0 1 115,65" fill="none"/>
+      <path id="${id}-bottom" d="M 115,68 A 50,50 0 0 1 15,68" fill="none"/>
+    </defs>
+    <g transform="rotate(-8 65 65)">
+      <circle cx="65" cy="65" r="62" fill="none" stroke="#1E3A8A" stroke-width="2.5"/>
+      <circle cx="65" cy="65" r="54" fill="none" stroke="#1E3A8A" stroke-width="1.2"/>
+      <circle cx="65" cy="65" r="4" fill="#1E3A8A"/>
+      <path d="M48 66 L59 77 L83 51" fill="none" stroke="#1E3A8A" stroke-width="5" stroke-linecap="round" stroke-linejoin="round"/>
+      <text font-family="Sora, sans-serif" font-size="11.5" font-weight="700" fill="#1E3A8A" letter-spacing="1.5">
+        <textPath href="#${id}-top" startOffset="50%" text-anchor="middle">ARY QUIZE BANK</textPath>
+      </text>
+      <text font-family="Sora, sans-serif" font-size="9.5" font-weight="700" fill="#1E3A8A" letter-spacing="3">
+        <textPath href="#${id}-bottom" startOffset="50%" text-anchor="middle">★ OFFICIAL SEAL ★</textPath>
+      </text>
+    </g>
+  </svg>`;
+}
+
+/* ============================================================================
+   LEADERBOARD (score desc, ties broken by faster completion time)
+   ============================================================================ */
+async function populateLeaderboardQuizSelect(selectId, quizzes) {
+  const sel = document.getElementById(selectId);
+  sel.innerHTML = quizzes.map(q => `<option value="${escapeHtml(q.quizName || q.QuizName)}">${escapeHtml(q.quizName || q.QuizName)}</option>`).join('');
+}
+
+async function loadStudentLeaderboard() {
+  const res = await apiCall(API_ACTIONS.getQuizzes, {});
+  const quizzes = res.success ? (res.data.quizzes || []) : [];
+  const sel = document.getElementById('studentLeaderboardQuizSelect');
+  if (quizzes.length === 0) { document.getElementById('studentLeaderboardList').innerHTML = `<div class="empty-state"><h4>No published quizzes yet</h4></div>`; sel.innerHTML = ''; return; }
+  await populateLeaderboardQuizSelect('studentLeaderboardQuizSelect', quizzes);
+  renderLeaderboardForSelect('studentLeaderboardQuizSelect', 'studentLeaderboardList');
+  sel.onchange = () => renderLeaderboardForSelect('studentLeaderboardQuizSelect', 'studentLeaderboardList');
+}
+
+async function loadAdminLeaderboard() {
+  const res = await apiCall(API_ACTIONS.getAllQuizzesAdmin, adminAuthParams());
+  const quizzes = res.success ? (res.data.quizzes || []) : [];
+  const sel = document.getElementById('adminLeaderboardQuizSelect');
+  if (quizzes.length === 0) { document.getElementById('adminLeaderboardList').innerHTML = `<div class="empty-state"><h4>No quizzes yet</h4></div>`; sel.innerHTML = ''; return; }
+  await populateLeaderboardQuizSelect('adminLeaderboardQuizSelect', quizzes);
+  renderLeaderboardForSelect('adminLeaderboardQuizSelect', 'adminLeaderboardList');
+  sel.onchange = () => renderLeaderboardForSelect('adminLeaderboardQuizSelect', 'adminLeaderboardList');
+}
+
+async function renderLeaderboardForSelect(selectId, listId) {
+  const quizName = document.getElementById(selectId).value;
+  const listEl = document.getElementById(listId);
+  if (!quizName) { listEl.innerHTML = `<div class="empty-state"><h4>No quiz selected</h4></div>`; return; }
+  listEl.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getLeaderboard, { quizName });
+  if (!res.success) { listEl.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.leaderboard || [];
+  if (rows.length === 0) { listEl.innerHTML = `<div class="empty-state"><h4>No attempts yet</h4></div>`; return; }
+
+  listEl.className = 'leaderboard-list';
+  listEl.innerHTML = rows.map(r => {
+    const topClass = r.rank === 1 ? 'is-top1' : r.rank === 2 ? 'is-top2' : r.rank === 3 ? 'is-top3' : '';
+    const medal = r.rank === 1 ? '🥇' : r.rank === 2 ? '🥈' : r.rank === 3 ? '🥉' : '';
+    return `
+    <div class="leaderboard-row ${topClass}">
+      <div class="leaderboard-rank">${medal || r.rank}</div>
+      <div class="leaderboard-name">
+        <img class="avatar-sm" src="${photoOrDefault(r.photo)}" alt="">
+        <span>${escapeHtml(r.studentName)}</span>
+      </div>
+      <div class="leaderboard-meta">
+        <span><strong>${fmtPct(r.percentage)}</strong></span>
+        <span>${escapeHtml(r.score)}/${escapeHtml(r.totalQuestions)}</span>
+        ${r.timeTakenSeconds !== null ? `<span><strong>${formatDuration(r.timeTakenSeconds)}</strong></span>` : ''}
+      </div>
+    </div>`;
+  }).join('');
+}
+
+/* ============================================================================
+   NOTIFICATIONS — in-app + browser Notification API while the app is open.
+   (True push-to-a-closed-app needs a Firebase/service-worker backend, which
+   this Sheets-based stack doesn't have — see the setup notes.)
+   ============================================================================ */
+let notifPollHandle = null;
+
+function requestNotificationPermission() {
+  if ('Notification' in window && Notification.permission === 'default') {
+    Notification.requestPermission();
+  }
+}
+
+function startNotificationPolling() {
+  stopNotificationPolling();
+  checkForNewNotifications(); // immediate check on login
+  notifPollHandle = setInterval(checkForNewNotifications, 25000);
+}
+function stopNotificationPolling() { if (notifPollHandle) clearInterval(notifPollHandle); notifPollHandle = null; }
+
+async function checkForNewNotifications() {
+  const s = Session.getStudent();
+  if (!s) return;
+  const res = await apiCall(API_ACTIONS.getNotifications, { studentId: s.studentId, className: s.className || '' });
+  if (!res.success) return;
+  const rows = res.data.notifications || [];
+  const lastSeenKey = `aryLastNotifSeen_${s.studentId}`;
+  const lastSeen = localStorage.getItem(lastSeenKey) || '';
+  const unseen = rows.filter(r => `${r.CreatedDate} ${r.CreatedTime}` > lastSeen);
+
+  document.getElementById('studentNotifDot')?.classList.toggle('hidden', unseen.length === 0);
+  document.getElementById('studentNotifBellDot')?.classList.toggle('hidden', unseen.length === 0);
+
+  if (unseen.length > 0) {
+    const latest = unseen[0];
+    showInAppAlert(latest.Title, latest.Message);
+    if ('Notification' in window && Notification.permission === 'granted') {
+      try { new Notification(latest.Title, { body: latest.Message, icon: DEFAULT_AVATAR }); } catch { /* ignore */ }
+    }
+  }
+}
+
+function showInAppAlert(title, message) {
+  const el = document.createElement('div');
+  el.className = 'in-app-alert';
+  el.innerHTML = `<h4>🔔 ${escapeHtml(title)}</h4><p>${escapeHtml(message)}</p>`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 6000);
+}
+
+async function loadStudentNotifications() {
+  const s = Session.getStudent();
+  const el = document.getElementById('studentNotificationsList');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getNotifications, { studentId: s.studentId, className: s.className || '' });
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.notifications || [];
+  el.innerHTML = rows.length === 0
+    ? `<div class="empty-state"><h4>No notifications yet</h4></div>`
+    : rows.map(n => `<div class="announcement-item"><h4>${escapeHtml(n.Title)}</h4><p>${escapeHtml(n.Message)}</p><time>${escapeHtml(n.CreatedDate)} · ${escapeHtml(n.CreatedTime)}</time></div>`).join('');
+
+  // Mark everything up to the newest as seen, and clear the bell dot.
+  if (rows.length > 0) {
+    localStorage.setItem(`aryLastNotifSeen_${s.studentId}`, `${rows[0].CreatedDate} ${rows[0].CreatedTime}`);
+    document.getElementById('studentNotifDot')?.classList.add('hidden');
+    document.getElementById('studentNotifBellDot')?.classList.add('hidden');
+  }
+}
+
+async function loadAdminNotifications() {
+  const el = document.getElementById('adminNotificationsTable');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getAllNotificationsAdmin, adminAuthParams());
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.notifications || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No notifications sent yet</h4></div>`; return; }
+
+  el.innerHTML = `<table><thead><tr><th>Title</th><th>Message</th><th>Sent to</th><th>Date</th><th>Actions</th></tr></thead><tbody>
+    ${rows.map(n => `<tr>
+      <td>${escapeHtml(n.Title)}</td>
+      <td>${escapeHtml(n.Message)}</td>
+      <td>${n.TargetType === 'All' ? 'All Students' : n.TargetType === 'Class' ? 'Class: ' + escapeHtml(n.TargetValue) : 'Student: ' + escapeHtml(n.TargetValue)}</td>
+      <td>${escapeHtml(n.CreatedDate)} ${escapeHtml(n.CreatedTime)}</td>
+      <td class="row-actions"><button class="btn btn-danger btn-sm" data-action="delete-notif" data-id="${escapeHtml(n.NotificationID)}">Delete</button></td>
+    </tr>`).join('')}
+  </tbody></table>`;
+
+  el.querySelectorAll('[data-action="delete-notif"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirmModal('Delete notification?', 'Students will no longer see this.');
+      if (!ok) return;
+      const res2 = await apiCall(API_ACTIONS.deleteNotification, { notificationId: btn.dataset.id, ...adminAuthParams() });
+      if (res2.success) { toast('Notification deleted.', 'success'); loadAdminNotifications(); }
+      else toast(res2.message || 'Delete failed.', 'error');
+    });
+  });
+}
+
+document.getElementById('newNotificationBtn').addEventListener('click', () => {
+  document.getElementById('notificationForm').reset();
+  document.getElementById('notifTargetValueField').classList.add('hidden');
+  openModal('notificationModal');
+});
+document.getElementById('notificationCancelBtn').addEventListener('click', () => closeModal('notificationModal'));
+document.getElementById('notifTargetType').addEventListener('change', (e) => {
+  const field = document.getElementById('notifTargetValueField');
+  const label = document.getElementById('notifTargetValueLabel');
+  if (e.target.value === 'All') { field.classList.add('hidden'); }
+  else {
+    field.classList.remove('hidden');
+    label.textContent = e.target.value === 'Class' ? 'Class name (e.g. BSN-3A)' : 'Student ID';
+  }
+});
+document.getElementById('notificationForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('notificationSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.createNotification, {
+    title: document.getElementById('notifTitle').value.trim(),
+    message: document.getElementById('notifMessage').value.trim(),
+    targetType: document.getElementById('notifTargetType').value,
+    targetValue: document.getElementById('notifTargetValue').value.trim(),
+    ...adminAuthParams()
+  });
+  setBtnLoading(btn, false);
+  if (res.success) { toast('Notification sent.', 'success'); closeModal('notificationModal'); loadAdminNotifications(); }
+  else toast(res.message || 'Could not send notification.', 'error');
+});
+
+/* ============================================================================
+   ADMIN: STUDENT PERFORMANCE PANEL (screenshot / PDF / Gmail / WhatsApp)
+   ============================================================================ */
+let currentPerfStudentId = null;
+let currentPerfStudent = null;
+
+async function loadStudentPerformance(studentId) {
+  currentPerfStudentId = studentId;
+  document.getElementById('perfCaptureArea').innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getStudentPerformance, { studentId, ...adminAuthParams() });
+  if (!res.success) { document.getElementById('perfCaptureArea').innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const d = res.data;
+  currentPerfStudent = d.profile;
+
+  document.getElementById('perfStudentName').textContent = d.profile.Name + ' — Performance';
+  document.getElementById('perfCaptureArea').innerHTML = `
+    <div id="perfStamp" class="result-receipt-stamp"></div>
+    <div class="welcome-banner">
+      <img id="perfPhoto" class="avatar-lg" src="${photoOrDefault(d.profile.Photo)}" alt="">
+      <div>
+        <h2 id="perfName">${escapeHtml(d.profile.Name)}</h2>
+        <p class="section-sub">${escapeHtml(d.profile.Class || '')} · ${escapeHtml(d.profile.Email)}</p>
+      </div>
+    </div>
+    <div class="stat-grid" id="perfStatGrid">
+      <div class="stat-card"><div class="stat-label">Quizzes Attempted</div><div class="stat-value">${d.attempts}</div></div>
+      <div class="stat-card"><div class="stat-label">Average Score</div><div class="stat-value">${fmtPct(d.averagePercentage)}</div></div>
+      <div class="stat-card"><div class="stat-label">Best Result</div><div class="stat-value">${d.bestResult ? fmtPct(d.bestResult.Percentage) : '—'}</div><div class="stat-sub">${d.bestResult ? escapeHtml(d.bestResult.QuizName) : ''}</div></div>
+      <div class="stat-card"><div class="stat-label">Weakest Result</div><div class="stat-value">${d.worstResult ? fmtPct(d.worstResult.Percentage) : '—'}</div><div class="stat-sub">${d.worstResult ? escapeHtml(d.worstResult.QuizName) : ''}</div></div>
+    </div>
+    <div class="panel">
+      <div class="panel-head"><h3>All Results</h3></div>
+      <div class="table-wrap">${d.results.length === 0 ? `<div class="empty-state"><h4>No attempts yet</h4></div>` : `
+        <table><thead><tr><th>Quiz</th><th>Score</th><th>Percentage</th><th>Date</th></tr></thead><tbody>
+          ${d.results.map(r => `<tr><td>${escapeHtml(r.QuizName)}</td><td>${escapeHtml(r.Score)}/${escapeHtml(r.TotalQuestions)}</td><td>${fmtPct(r.Percentage)}</td><td>${escapeHtml(r.Date)}</td></tr>`).join('')}
+        </tbody></table>`}
+      </div>
+    </div>
+  `;
+  document.getElementById('perfStamp').innerHTML = navyStampSVG(72);
+}
+
+document.getElementById('perfScreenshotBtn').addEventListener('click', () => {
+  if (!currentPerfStudent) return;
+  downloadElementAsImage('perfCaptureArea', `${currentPerfStudent.Name}-performance.png`);
+});
+
+document.getElementById('perfPdfBtn').addEventListener('click', async () => {
+  if (!currentPerfStudent) return;
+  const btn = document.getElementById('perfPdfBtn');
+  setBtnLoading(btn, true);
+  try {
+    await downloadPerformancePdf(`${currentPerfStudent.Name}-performance-report.pdf`);
+  } finally {
+    setBtnLoading(btn, false);
+  }
+});
+
+// Renders the performance panel into a high-resolution PNG, then embeds that
+// image into a landscape PDF page — the PDF stays sharp because the source
+// capture is scaled up (scale:3) before being placed at native size.
+async function buildPerformancePdfBlob() {
+  const canvas = await html2canvas(document.getElementById('perfCaptureArea'), { backgroundColor: '#ffffff', scale: 3 });
+  const imgData = canvas.toDataURL('image/png');
+  const { jsPDF } = window.jspdf;
+  const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [canvas.width / 3, canvas.height / 3] });
+  pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 3, canvas.height / 3);
+  return pdf;
+}
+async function downloadPerformancePdf(filename) {
+  const pdf = await buildPerformancePdfBlob();
+  pdf.save(filename);
+}
+async function performancePdfDataUrl() {
+  const pdf = await buildPerformancePdfBlob();
+  return pdf.output('datauristring');
+}
+
+document.getElementById('perfEmailBtn').addEventListener('click', () => {
+  if (!currentPerfStudent) { toast('Open a student\'s performance first.', 'warning'); return; }
+  document.getElementById('emailModalTarget').textContent = `${currentPerfStudent.Name} (${currentPerfStudent.Email})`;
+  document.getElementById('emailSubject').value = 'Your ARY Quize Bank Performance Report';
+  document.getElementById('emailMessage').value = `Hi ${currentPerfStudent.Name},\n\nHere is your latest performance summary from ARY Quize Bank.`;
+  document.getElementById('emailForm').dataset.mode = 'performance';
+  openModal('emailModal');
+});
+document.getElementById('emailCancelBtn').addEventListener('click', () => closeModal('emailModal'));
+document.getElementById('emailForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('emailSendBtn');
+  setBtnLoading(btn, true);
+  try {
+    const imageDataUrl = await elementToImageDataUrl('perfCaptureArea');
+    const res = await apiCall(API_ACTIONS.sendResultEmail, {
+      studentId: currentPerfStudentId, imageDataUrl,
+      subject: document.getElementById('emailSubject').value.trim(),
+      message: document.getElementById('emailMessage').value.trim(),
+      ...adminAuthParams()
+    });
+    if (res.success) { toast(res.message || 'Emailed.', 'success'); closeModal('emailModal'); }
+    else toast(res.message || 'Could not send email.', 'error');
+  } catch {
+    toast('Could not capture the screenshot to send.', 'error');
+  } finally {
+    setBtnLoading(btn, false);
+  }
+});
+
+// WhatsApp: no free API can auto-send an attachment without the user tapping
+// Send themselves. On mobile this uses the native Share Sheet (pick WhatsApp,
+// image is pre-attached); on desktop it falls back to downloading the image
+// plus opening WhatsApp Web with a prefilled message.
+document.getElementById('perfWhatsappBtn').addEventListener('click', async () => {
+  if (!currentPerfStudent) { toast('Open a student\'s performance first.', 'warning'); return; }
+  await shareImageViaWhatsapp('perfCaptureArea', `${currentPerfStudent.Name}-performance.png`, `${currentPerfStudent.Name}'s performance report — ARY Quize Bank`);
+});
+
+async function shareImageViaWhatsapp(elementId, filename, caption) {
+  try {
+    const canvas = await html2canvas(document.getElementById(elementId), { backgroundColor: '#ffffff', scale: 2 });
+    const blob = await new Promise(resolve => canvas.toBlob(resolve, 'image/png'));
+    const file = new File([blob], filename, { type: 'image/png' });
+
+    if (navigator.canShare && navigator.canShare({ files: [file] })) {
+      await navigator.share({ files: [file], text: caption });
+    } else {
+      const link = document.createElement('a');
+      link.download = filename;
+      link.href = canvas.toDataURL('image/png');
+      link.click();
+      toast('Image downloaded — attach it manually in the WhatsApp chat that just opened.', 'default');
+      window.open(`https://wa.me/?text=${encodeURIComponent(caption)}`, '_blank');
+    }
+  } catch (err) {
+    toast('Could not prepare the image to share.', 'error');
+  }
+}
+
+/* ============================================================================
+   CERTIFICATE SYSTEM
+   ============================================================================ */
+const CERT_TITLES = {
+  Completion: 'CERTIFICATE OF COMPLETION',
+  OutstandingPerformance: 'CERTIFICATE OF OUTSTANDING PERFORMANCE',
+  MockTest: 'MOCK TEST COMPLETION CERTIFICATE'
+};
+
+// Builds the certificate artwork as an off-DOM node so it can be captured at
+// high resolution regardless of what's currently on screen. Uses only vector
+// (SVG icons, CSS borders, web-font text) so nothing in it can look blurry.
+function buildCertificateNode(cert) {
+  const wrap = document.createElement('div');
+  wrap.className = 'certificate-sheet';
+  wrap.innerHTML = `
+    <div class="certificate-border">
+      <div class="certificate-stamp">${navyStampSVG(120)}</div>
+      <div class="certificate-cap">🎓</div>
+      <h1 class="certificate-brand">ARY QUIZE BANK</h1>
+      <div class="certificate-rule"></div>
+      <h2 class="certificate-title">${escapeHtml(CERT_TITLES[cert.CertificateType] || 'CERTIFICATE')}</h2>
+      <p class="certificate-presented">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
+      <div class="certificate-name">${escapeHtml(cert.StudentName)}</div>
+      <p class="certificate-body">${escapeHtml(cert.AchievementText)}</p>
+      ${!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuizzes) ? `<p class="certificate-score">${escapeHtml(cert.Score)} OUT OF ${escapeHtml(cert.TotalQuizzes)}</p>` : ''}
+      <div class="certificate-meta-grid">
+        ${cert.Program ? `<div><strong>Program</strong><span>${escapeHtml(cert.Program)}</span></div>` : ''}
+        ${cert.Semester ? `<div><strong>Semester</strong><span>${escapeHtml(cert.Semester)}</span></div>` : ''}
+        ${cert.Shift ? `<div><strong>Shift</strong><span>${escapeHtml(cert.Shift)}</span></div>` : ''}
+        ${cert.RollNo ? `<div><strong>Roll No.</strong><span>${escapeHtml(cert.RollNo)}</span></div>` : ''}
+      </div>
+      <div class="certificate-signatures">
+        <div><span class="sig-script">${escapeHtml(cert.MentorName || 'Mentor')}</span><strong>${escapeHtml(cert.MentorName || '')}</strong><small>Test Preparation Mentor</small></div>
+        <div><span class="sig-script">${escapeHtml(cert.AdminName || 'Admin')}</span><strong>${escapeHtml(cert.AdminName || '')}</strong><small>Admin & Founder</small></div>
+      </div>
+      <p class="certificate-issued">Issued ${escapeHtml(cert.IssuedDate)} · Certificate ID ${escapeHtml(cert.CertificateID)}</p>
+    </div>
+  `;
+  wrap.style.position = 'fixed';
+  wrap.style.left = '-9999px';
+  wrap.style.top = '0';
+  document.body.appendChild(wrap);
+  return wrap;
+}
+
+async function downloadCertificateImage(cert) {
+  const node = buildCertificateNode(cert);
+  try {
+    const canvas = await html2canvas(node.querySelector('.certificate-border'), { backgroundColor: '#ffffff', scale: 3 });
+    const link = document.createElement('a');
+    link.download = `${cert.StudentName}-certificate.png`;
+    link.href = canvas.toDataURL('image/png');
+    link.click();
+  } finally {
+    node.remove();
+  }
+}
+
+async function downloadCertificatePdf(cert) {
+  const node = buildCertificateNode(cert);
+  try {
+    const canvas = await html2canvas(node.querySelector('.certificate-border'), { backgroundColor: '#ffffff', scale: 3 });
+    const imgData = canvas.toDataURL('image/png');
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'landscape', unit: 'px', format: [canvas.width / 3, canvas.height / 3] });
+    pdf.addImage(imgData, 'PNG', 0, 0, canvas.width / 3, canvas.height / 3);
+    pdf.save(`${cert.StudentName}-certificate.pdf`);
+  } finally {
+    node.remove();
+  }
+}
+
+function renderCertificateCards(container, rows, isAdmin) {
+  if (!rows || rows.length === 0) { container.innerHTML = `<div class="empty-state"><h4>No certificates yet</h4></div>`; return; }
+  container.className = 'quiz-grid';
+  container.innerHTML = rows.map(c => `
+    <div class="quiz-card">
+      <div class="quiz-card-top">
+        <h3>${escapeHtml(CERT_TITLES[c.CertificateType] || 'Certificate')}</h3>
+      </div>
+      <p class="section-sub" style="margin:0;">${escapeHtml((c.AchievementText || '').slice(0, 90))}${(c.AchievementText || '').length > 90 ? '…' : ''}</p>
+      <div class="quiz-meta-row"><span>📅 ${escapeHtml(c.IssuedDate)}</span></div>
+      <div class="row-actions">
+        <button class="btn btn-outline btn-sm" data-cert-action="image" data-id="${escapeHtml(c.CertificateID)}">Download Image</button>
+        <button class="btn btn-outline btn-sm" data-cert-action="pdf" data-id="${escapeHtml(c.CertificateID)}">Download PDF</button>
+        ${isAdmin ? `<button class="btn btn-danger btn-sm" data-cert-action="revoke" data-id="${escapeHtml(c.CertificateID)}">Revoke</button>` : ''}
+      </div>
+    </div>
+  `).join('');
+
+  container.querySelectorAll('[data-cert-action]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const cert = rows.find(c => c.CertificateID === btn.dataset.id);
+      if (btn.dataset.certAction === 'image') downloadCertificateImage(cert);
+      if (btn.dataset.certAction === 'pdf') downloadCertificatePdf(cert);
+      if (btn.dataset.certAction === 'revoke') {
+        const ok = await confirmModal('Revoke this certificate?', 'The student will no longer see it.');
+        if (!ok) return;
+        const res = await apiCall(API_ACTIONS.deleteCertificate, { certificateId: cert.CertificateID, ...adminAuthParams() });
+        if (res.success) { toast('Certificate revoked.', 'success'); loadAdminCertificates(); }
+        else toast(res.message || 'Could not revoke.', 'error');
+      }
+    });
+  });
+}
+
+async function loadStudentCertificates() {
+  const s = Session.getStudent();
+  const el = document.getElementById('studentCertificatesGrid');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getStudentCertificates, { studentId: s.studentId });
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  renderCertificateCards(el, res.data.certificates, false);
+}
+
+async function loadAdminCertificates() {
+  const el = document.getElementById('adminCertificatesGrid');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getAllCertificatesAdmin, adminAuthParams());
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  renderCertificateCards(el, res.data.certificates, true);
+}
+
+document.getElementById('newCertificateBtn').addEventListener('click', async () => {
+  document.getElementById('certificateForm').reset();
+  document.getElementById('certStudentSearchResult').innerHTML = '';
+  document.getElementById('certSelectedStudentId').value = '';
+  const admin = Session.getAdmin();
+  document.getElementById('certAdminName').value = admin ? admin.name : '';
+  openModal('certificateModal');
+});
+document.getElementById('certificateCancelBtn').addEventListener('click', () => closeModal('certificateModal'));
+
+document.getElementById('certStudentSearchBtn').addEventListener('click', async () => {
+  const query = document.getElementById('certStudentSearchInput').value.trim().toLowerCase();
+  const resultEl = document.getElementById('certStudentSearchResult');
+  if (!query) return;
+  const res = await apiCall(API_ACTIONS.getStudents, adminAuthParams());
+  if (!res.success) { resultEl.innerHTML = `<p class="form-error">${escapeHtml(res.message)}</p>`; return; }
+  const matches = (res.data.students || []).filter(s => `${s.Name} ${s.Email} ${s.StudentID}`.toLowerCase().includes(query)).slice(0, 6);
+  resultEl.innerHTML = matches.length === 0 ? `<p class="field-hint">No students matched.</p>` : matches.map(s => `
+    <div class="cert-student-pick" data-id="${escapeHtml(s.StudentID)}" data-name="${escapeHtml(s.Name)}" data-class="${escapeHtml(s.Class)}">
+      <img class="avatar-sm" src="${photoOrDefault(s.Photo)}" alt=""> <span>${escapeHtml(s.Name)} — ${escapeHtml(s.Class)}</span>
+    </div>`).join('');
+  resultEl.querySelectorAll('.cert-student-pick').forEach(row => {
+    row.addEventListener('click', () => {
+      document.getElementById('certSelectedStudentId').value = row.dataset.id;
+      document.getElementById('certSelectedStudentLabel').textContent = `Selected: ${row.dataset.name} (${row.dataset.class})`;
+      document.getElementById('certSemester').value = document.getElementById('certSemester').value || '';
+    });
+  });
+});
+
+document.getElementById('certificateForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const studentId = document.getElementById('certSelectedStudentId').value;
+  if (!studentId) { toast('Search and select a student first.', 'warning'); return; }
+  const btn = document.getElementById('certificateSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.issueCertificate, {
+    studentId,
+    certificateType: document.getElementById('certType').value,
+    program: document.getElementById('certProgram').value.trim(),
+    semester: document.getElementById('certSemester').value.trim(),
+    shift: document.getElementById('certShift').value.trim(),
+    rollNo: document.getElementById('certRollNo').value.trim(),
+    achievementText: document.getElementById('certAchievement').value.trim(),
+    score: document.getElementById('certScore').value.trim(),
+    totalQuizzes: document.getElementById('certTotalQuizzes').value.trim(),
+    mentorName: document.getElementById('certMentorName').value.trim(),
+    adminName: document.getElementById('certAdminName').value.trim(),
+    ...adminAuthParams()
+  });
+  setBtnLoading(btn, false);
+  if (res.success) { toast('Certificate issued.', 'success'); closeModal('certificateModal'); loadAdminCertificates(); }
+  else toast(res.message || 'Could not issue certificate.', 'error');
+});
+
+/* ============================================================================
    INIT — restore session on load
    ============================================================================ */
 (function init() {
   document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
   const student = Session.getStudent();
   const admin = Session.getAdmin();
-  if (student) { applyStudentSessionToUI(); navigate('student-dashboard'); }
+  if (student) {
+    applyStudentSessionToUI();
+    navigate('student-dashboard');
+    requestNotificationPermission();
+    startNotificationPolling();
+  }
   else if (admin) { applyAdminSessionToUI(); navigate('admin-dashboard'); }
   else navigate('home');
 })();
