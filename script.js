@@ -93,15 +93,14 @@ const API_ACTIONS = {
 ---------------------------------------------------------------------------- */
 async function apiCall(action, params = {}) {
   try {
-    const res = await fetch(API_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-      body: JSON.stringify({ action, ...params })
-    });
-    const data = await res.json();
-    return data;
+    const handler = FIREBASE_ACTIONS[action];
+    if (!handler) {
+      return { success: false, message: 'This feature ("' + action + '") has not been migrated to Firebase yet.', data: {} };
+    }
+    return await handler(params);
   } catch (err) {
-    return { success: false, message: 'Network error — could not reach the server. ' + err.message, data: {} };
+    console.error('apiCall error for action "' + action + '":', err);
+    return { success: false, message: 'Error: ' + err.message, data: {} };
   }
 }
 
