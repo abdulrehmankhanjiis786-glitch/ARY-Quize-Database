@@ -1305,28 +1305,38 @@ function dataUrlToBlob(dataUrl, filename) {
   return Utilities.newBlob(bytes, mimeType, filename);
 }
 
+// ----------------------------------------------------------------------------
+// NOTE (Firebase migration): Students/Admins now live in Firebase, not in
+// this spreadsheet, so these two functions no longer look anything up here —
+// the frontend fetches the student's email from Firebase and sends it
+// directly. This deployment is now used ONLY as a mail-relay microservice
+// (MailApp needs a Google-side server to run on). EMAIL_RELAY_KEY is a
+// simple shared secret so random people who find this /exec URL can't use it
+// to spam emails — it must match RELAY_KEY in firebase-email.js.
+// ----------------------------------------------------------------------------
+var EMAIL_RELAY_KEY = 'ARY-QB-2026-CHANGE-ME';
+
+function requireRelayKey(p) {
+  if (String(p.relayKey || '') !== EMAIL_RELAY_KEY) return { ok: false, response: jsonResponse(false, 'Unauthorized.') };
+  return { ok: true };
+}
+
 // Emails an image (e.g. a result/leaderboard screenshot) to a student's
 // registered email address. imageDataUrl must be a data:image/... base64 URL.
 function apiSendResultEmail(p) {
-  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
-  var missing = validateRequired(p, ['studentId', 'imageDataUrl']);
+  var auth = requireRelayKey(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['studentEmail', 'imageDataUrl']);
   if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
-
-  var studentsSheet = getSheetSafe('Students');
-  var rowNum = findRowByValue(studentsSheet, 'StudentID', p.studentId);
-  if (rowNum === -1) return jsonResponse(false, 'Student not found.');
-  var studentRow = sheetToObjects(studentsSheet).find(function (s) { return s.StudentID === p.studentId; });
-  if (!studentRow || isEmpty(studentRow.Email)) return jsonResponse(false, 'This student has no registered email on file.');
 
   try {
     var blob = dataUrlToBlob(p.imageDataUrl, 'result.png');
     var subject = p.subject || 'Your ARY Quize Bank Result';
-    var body = p.message || ('Hi ' + studentRow.Name + ',\n\nHere is your quiz result from ARY Quize Bank.\n\n— ' + auth.admin.Name);
+    var body = p.message || ('Hi ' + (p.studentName || '') + ',\n\nHere is your quiz result from ARY Quize Bank.\n\n— ' + (p.adminName || 'ARY Quize Bank'));
     MailApp.sendEmail({
-      to: studentRow.Email, subject: subject, body: body,
+      to: p.studentEmail, subject: subject, body: body,
       attachments: [blob], inlineImages: {}
     });
-    return jsonResponse(true, 'Emailed to ' + studentRow.Email + '.');
+    return jsonResponse(true, 'Emailed to ' + p.studentEmail + '.');
   } catch (err) {
     return jsonResponse(false, 'Could not send email: ' + err.message);
   }
@@ -1334,20 +1344,16 @@ function apiSendResultEmail(p) {
 
 // Emails a generated PDF performance report to a student.
 function apiSendReportEmail(p) {
-  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
-  var missing = validateRequired(p, ['studentId', 'pdfDataUrl']);
+  var auth = requireRelayKey(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['studentEmail', 'pdfDataUrl']);
   if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
-
-  var studentsSheet = getSheetSafe('Students');
-  var studentRow = sheetToObjects(studentsSheet).find(function (s) { return s.StudentID === p.studentId; });
-  if (!studentRow || isEmpty(studentRow.Email)) return jsonResponse(false, 'This student has no registered email on file.');
 
   try {
     var blob = dataUrlToBlob(p.pdfDataUrl, 'performance-report.pdf');
     var subject = p.subject || 'Your ARY Quize Bank Performance Report';
-    var body = p.message || ('Hi ' + studentRow.Name + ',\n\nAttached is your performance report from ARY Quize Bank.\n\n— ' + auth.admin.Name);
-    MailApp.sendEmail({ to: studentRow.Email, subject: subject, body: body, attachments: [blob] });
-    return jsonResponse(true, 'Emailed to ' + studentRow.Email + '.');
+    var body = p.message || ('Hi ' + (p.studentName || '') + ',\n\nAttached is your performance report from ARY Quize Bank.\n\n— ' + (p.adminName || 'ARY Quize Bank'));
+    MailApp.sendEmail({ to: p.studentEmail, subject: subject, body: body, attachments: [blob] });
+    return jsonResponse(true, 'Emailed to ' + p.studentEmail + '.');
   } catch (err) {
     return jsonResponse(false, 'Could not send email: ' + err.message);
   }
