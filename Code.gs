@@ -36,14 +36,16 @@
 
 var SPREADSHEET_ID = '';
 
-var SYSTEM_SHEETS = ['Students', 'Results', 'Admins', 'Announcements', 'QuizSettings', 'Contacts'];
+var SYSTEM_SHEETS = ['Students', 'Results', 'Admins', 'Announcements', 'QuizSettings', 'Contacts', 'Notifications', 'Certificates'];
 
 var STUDENTS_HEADERS = ['StudentID', 'Name', 'Email', 'Password', 'Class', 'Photo', 'Status', 'RegistrationDate'];
-var RESULTS_HEADERS = ['ResultID', 'StudentID', 'StudentName', 'QuizName', 'Score', 'TotalQuestions', 'Percentage', 'CorrectAnswers', 'WrongAnswers', 'Date', 'Time'];
+var RESULTS_HEADERS = ['ResultID', 'StudentID', 'StudentName', 'QuizName', 'Score', 'TotalQuestions', 'Percentage', 'CorrectAnswers', 'WrongAnswers', 'Date', 'Time', 'TimeTakenSeconds'];
 var ADMINS_HEADERS = ['AdminID', 'Name', 'Email', 'Password', 'Role', 'Status', 'Photo', 'Permissions'];
 var ANNOUNCEMENTS_HEADERS = ['AnnouncementID', 'Title', 'Message', 'Date', 'Status'];
 var QUIZSETTINGS_HEADERS = ['QuizName', 'Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions', 'CreatedDate', 'ReviewStatus', 'ReviewNote'];
 var CONTACTS_HEADERS = ['ContactID', 'Name', 'Role', 'Phone', 'WhatsApp', 'Email', 'Status'];
+var NOTIFICATIONS_HEADERS = ['NotificationID', 'Title', 'Message', 'TargetType', 'TargetValue', 'CreatedDate', 'CreatedTime', 'Status'];
+var CERTIFICATES_HEADERS = ['CertificateID', 'StudentID', 'StudentName', 'CertificateType', 'Program', 'Semester', 'Shift', 'RollNo', 'AchievementText', 'Score', 'TotalQuizzes', 'MentorName', 'AdminName', 'IssuedDate', 'Status'];
 
 // Quiz tab column order (row 1 must be exactly this)
 var QUIZ_TAB_HEADERS = ['Question', 'OptionA', 'OptionB', 'OptionC', 'OptionD', 'CorrectAnswer'];
@@ -129,7 +131,35 @@ function handleRequest(e) {
       setAdminStatus: apiSetAdminStatus,
       updateAdminPermissions: apiUpdateAdminPermissions,
       removeAdmin: apiRemoveAdmin,
-      updateAdminProfile: apiUpdateAdminProfile
+      updateAdminProfile: apiUpdateAdminProfile,
+
+      // ---- Admin: full results control (NEW v3) ----
+      deleteResult: apiDeleteResult,
+      updateResult: apiUpdateResult,
+      deleteQuiz: apiDeleteQuiz,
+      getLeaderboard: apiGetLeaderboard,
+      getStudentPerformance: apiGetStudentPerformance,
+
+      // ---- Quiz question management (NEW v5) ----
+      createQuiz: apiCreateQuiz,
+      getQuizQuestionsAdmin: apiGetQuizQuestionsAdmin,
+      updateQuizQuestions: apiUpdateQuizQuestions,
+
+      // ---- Notifications (NEW v3) ----
+      createNotification: apiCreateNotification,
+      getNotifications: apiGetNotifications,
+      getAllNotificationsAdmin: apiGetAllNotificationsAdmin,
+      deleteNotification: apiDeleteNotification,
+
+      // ---- Email delivery (NEW v3) ----
+      sendResultEmail: apiSendResultEmail,
+      sendReportEmail: apiSendReportEmail,
+
+      // ---- Certificates (NEW v4) ----
+      issueCertificate: apiIssueCertificate,
+      getStudentCertificates: apiGetStudentCertificates,
+      getAllCertificatesAdmin: apiGetAllCertificatesAdmin,
+      deleteCertificate: apiDeleteCertificate
     };
 
     if (!routes.hasOwnProperty(action)) return jsonResponse(false, 'Unknown action: ' + action);
@@ -152,8 +182,10 @@ function setup() {
   getOrCreateSheet('Announcements', ANNOUNCEMENTS_HEADERS);
   getOrCreateSheet('QuizSettings', QUIZSETTINGS_HEADERS);
   getOrCreateSheet('Contacts', CONTACTS_HEADERS);
+  getOrCreateSheet('Notifications', NOTIFICATIONS_HEADERS);
+  getOrCreateSheet('Certificates', CERTIFICATES_HEADERS);
   syncQuizSettingsWithTabs();
-  Logger.log('Setup complete. System sheets created/verified (including v2 additions).');
+  Logger.log('Setup complete. System sheets created/verified (including v2, v3, and v4 additions).');
 }
 
 
@@ -216,10 +248,19 @@ function findRowByValue(sheet, columnName, value) {
   return -1;
 }
 
+// Writes a value under the given header name. If the sheet's header row is
+// missing that column (e.g. it was created before this feature existed and
+// the admin hasn't re-run setup()), this SELF-HEALS by adding the column on
+// the spot instead of throwing — so a photo/permission/etc. upload never
+// silently fails and "disappears" just because setup() wasn't re-run.
 function setCellByRowAndHeader(sheet, rowNumber, headerName, value) {
-  var headers = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  var lastCol = Math.max(sheet.getLastColumn(), 1);
+  var headers = sheet.getRange(1, 1, 1, lastCol).getValues()[0];
   var colIndex = headers.indexOf(headerName);
-  if (colIndex === -1) throw new Error('Column not found: ' + headerName);
+  if (colIndex === -1) {
+    colIndex = lastCol; // append as a new column right after the last one
+    sheet.getRange(1, colIndex + 1).setValue(headerName);
+  }
   sheet.getRange(rowNumber, colIndex + 1).setValue(value);
 }
 
@@ -524,7 +565,8 @@ function apiSubmitQuiz(p) {
     var resultsSheet = getOrCreateSheet('Results', RESULTS_HEADERS);
     var resultId = generateId('RES');
     var now = new Date();
-    resultsSheet.appendRow([resultId, p.studentId, studentName, p.quizName, correctCount, total, percentage, correctCount, wrongCount, formatDate(now), formatTime(now)]);
+    var timeTaken = isEmpty(p.timeTakenSeconds) ? '' : Number(p.timeTakenSeconds);
+    resultsSheet.appendRow([resultId, p.studentId, studentName, p.quizName, correctCount, total, percentage, correctCount, wrongCount, formatDate(now), formatTime(now), timeTaken]);
 
     return jsonResponse(true, 'Quiz submitted successfully.', {
       resultId: resultId, score: correctCount, totalQuestions: total, percentage: percentage, correctAnswers: correctCount, wrongAnswers: wrongCount
@@ -1040,4 +1082,418 @@ function apiUpdateAdminProfile(p) {
   if (!isEmpty(p.photo)) setCellByRowAndHeader(sheet, rowNum, 'Photo', p.photo);
   if (!isEmpty(p.newPassword)) setCellByRowAndHeader(sheet, rowNum, 'Password', p.newPassword);
   return jsonResponse(true, 'Profile updated.');
+}
+
+
+// ======================================================================================
+// ADMIN: FULL RESULTS CONTROL (NEW v3)
+// ======================================================================================
+
+// Deletes a single student's attempt from Results. Full control per the brief:
+// admins can remove any response.
+function apiDeleteResult(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['resultId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  var sheet = getSheetSafe('Results');
+  var rowNum = findRowByValue(sheet, 'ResultID', p.resultId);
+  if (rowNum === -1) return jsonResponse(false, 'Result not found.');
+  sheet.deleteRow(rowNum);
+  return jsonResponse(true, 'Result deleted.');
+}
+
+// Lets an admin correct a result (e.g. a mis-scored manual override). Recomputes
+// percentage automatically so the numbers always stay consistent.
+function apiUpdateResult(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['resultId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  var sheet = getSheetSafe('Results');
+  var rowNum = findRowByValue(sheet, 'ResultID', p.resultId);
+  if (rowNum === -1) return jsonResponse(false, 'Result not found.');
+
+  var rows = sheetToObjects(sheet);
+  var current = null;
+  for (var i = 0; i < rows.length; i++) if (rows[i].ResultID === p.resultId) { current = rows[i]; break; }
+
+  var correct = !isEmpty(p.correctAnswers) ? Number(p.correctAnswers) : Number(current.CorrectAnswers);
+  var total = !isEmpty(p.totalQuestions) ? Number(p.totalQuestions) : Number(current.TotalQuestions);
+  var wrong = Math.max(total - correct, 0);
+  var percentage = total > 0 ? Math.round((correct / total) * 10000) / 100 : 0;
+
+  setCellByRowAndHeader(sheet, rowNum, 'CorrectAnswers', correct);
+  setCellByRowAndHeader(sheet, rowNum, 'WrongAnswers', wrong);
+  setCellByRowAndHeader(sheet, rowNum, 'Score', correct);
+  setCellByRowAndHeader(sheet, rowNum, 'TotalQuestions', total);
+  setCellByRowAndHeader(sheet, rowNum, 'Percentage', percentage);
+  return jsonResponse(true, 'Result updated.', { correctAnswers: correct, wrongAnswers: wrong, percentage: percentage });
+}
+
+// Permanently deletes a quiz: the sheet tab itself, its QuizSettings row, and
+// (optionally) every Result logged against it. Destructive — the frontend
+// should make the admin type the quiz name to confirm.
+function apiDeleteQuiz(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['quizName']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var ss = getSpreadsheet();
+  var quizSheet = ss.getSheetByName(p.quizName);
+  if (!quizSheet || isSystemSheet(p.quizName)) return jsonResponse(false, 'Quiz tab not found.');
+  ss.deleteSheet(quizSheet);
+
+  var settingsSheet = getSheetSafe('QuizSettings');
+  var rowNum = findRowByValue(settingsSheet, 'QuizName', p.quizName);
+  if (rowNum !== -1) settingsSheet.deleteRow(rowNum);
+
+  var deletedResults = 0;
+  if (p.deleteResults === true || String(p.deleteResults).toUpperCase() === 'TRUE') {
+    var resultsSheet = getSheetSafe('Results');
+    var rows = sheetToObjects(resultsSheet);
+    for (var i = rows.length - 1; i >= 0; i--) {
+      if (rows[i].QuizName === p.quizName) { resultsSheet.deleteRow(rows[i]._row); deletedResults++; }
+    }
+  }
+
+  return jsonResponse(true, 'Quiz deleted.', { deletedResults: deletedResults });
+}
+
+// Leaderboard for one quiz: ranked by Percentage desc, ties broken by
+// TimeTakenSeconds asc (faster finish wins), then by earliest submission
+// timestamp as a final tiebreaker for legacy rows with no recorded duration.
+function apiGetLeaderboard(p) {
+  var missing = validateRequired(p, ['quizName']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var sheet = getSheetSafe('Results');
+  var rows = sheetToObjects(sheet).filter(function (r) { return r.QuizName === p.quizName; });
+
+  rows.sort(function (a, b) {
+    var pctDiff = (Number(b.Percentage) || 0) - (Number(a.Percentage) || 0);
+    if (pctDiff !== 0) return pctDiff;
+
+    var aTime = isEmpty(a.TimeTakenSeconds) ? Infinity : Number(a.TimeTakenSeconds);
+    var bTime = isEmpty(b.TimeTakenSeconds) ? Infinity : Number(b.TimeTakenSeconds);
+    if (aTime !== bTime) return aTime - bTime;
+
+    var aStamp = new Date(a.Date + ' ' + (a.Time || '00:00:00')).getTime();
+    var bStamp = new Date(b.Date + ' ' + (b.Time || '00:00:00')).getTime();
+    return aStamp - bStamp;
+  });
+
+  var studentsSheet = getSheetSafe('Students');
+  var studentPhotoMap = {};
+  sheetToObjects(studentsSheet).forEach(function (s) { studentPhotoMap[s.StudentID] = s.Photo || ''; });
+
+  var out = rows.map(function (r, i) {
+    return {
+      rank: i + 1, resultId: r.ResultID, studentId: r.StudentID, studentName: r.StudentName,
+      photo: studentPhotoMap[r.StudentID] || '', score: r.Score, totalQuestions: r.TotalQuestions,
+      percentage: r.Percentage, timeTakenSeconds: isEmpty(r.TimeTakenSeconds) ? null : Number(r.TimeTakenSeconds),
+      date: r.Date, time: r.Time
+    };
+  });
+
+  return jsonResponse(true, 'OK', { quizName: p.quizName, leaderboard: out });
+}
+
+// Full picture of one student for the admin: profile + every result +
+// aggregate stats, so an admin can review a single student in depth.
+function apiGetStudentPerformance(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['studentId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var studentsSheet = getSheetSafe('Students');
+  var studentRow = null;
+  var studentRows = sheetToObjects(studentsSheet);
+  for (var i = 0; i < studentRows.length; i++) if (studentRows[i].StudentID === p.studentId) { studentRow = studentRows[i]; break; }
+  if (!studentRow) return jsonResponse(false, 'Student not found.');
+
+  var results = sheetToObjects(getSheetSafe('Results')).filter(function (r) { return r.StudentID === p.studentId; }).map(stripRowMeta);
+  var totalPct = 0, best = null, worst = null;
+  results.forEach(function (r) {
+    var pct = Number(r.Percentage) || 0;
+    totalPct += pct;
+    if (best === null || pct > Number(best.Percentage)) best = r;
+    if (worst === null || pct < Number(worst.Percentage)) worst = r;
+  });
+  var avgPct = results.length > 0 ? Math.round((totalPct / results.length) * 100) / 100 : 0;
+
+  var profile = stripRowMeta(studentRow); delete profile.Password;
+  return jsonResponse(true, 'OK', {
+    profile: profile, attempts: results.length, averagePercentage: avgPct,
+    bestResult: best, worstResult: worst, results: results
+  });
+}
+
+
+// ======================================================================================
+// NOTIFICATIONS (NEW v3)
+// ======================================================================================
+
+// TargetType: 'All' | 'Class' | 'Student'. TargetValue holds the class name or
+// studentId for the latter two, and is ignored for 'All'.
+function apiCreateNotification(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['title', 'message', 'targetType']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  if (['All', 'Class', 'Student'].indexOf(p.targetType) === -1) return jsonResponse(false, 'targetType must be All, Class, or Student.');
+  if (p.targetType !== 'All' && isEmpty(p.targetValue)) return jsonResponse(false, 'targetValue is required for Class/Student notifications.');
+
+  var sheet = getOrCreateSheet('Notifications', NOTIFICATIONS_HEADERS);
+  var id = generateId('NTF');
+  var now = new Date();
+  sheet.appendRow([id, p.title, p.message, p.targetType, p.targetValue || '', formatDate(now), formatTime(now), 'Active']);
+  return jsonResponse(true, 'Notification sent.', { notificationId: id });
+}
+
+// Students poll this. Pass studentId + className to get everything relevant
+// to them (broadcast + their class + ones aimed at them personally).
+function apiGetNotifications(p) {
+  var missing = validateRequired(p, ['studentId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var sheet = getOrCreateSheet('Notifications', NOTIFICATIONS_HEADERS);
+  var rows = sheetToObjects(sheet).filter(function (r) { return String(r.Status).toLowerCase() === 'active'; });
+  var className = p.className || '';
+
+  var relevant = rows.filter(function (r) {
+    if (r.TargetType === 'All') return true;
+    if (r.TargetType === 'Class') return String(r.TargetValue).toLowerCase() === String(className).toLowerCase();
+    if (r.TargetType === 'Student') return r.TargetValue === p.studentId;
+    return false;
+  }).map(stripRowMeta);
+
+  relevant.sort(function (a, b) { return new Date(b.CreatedDate + ' ' + b.CreatedTime) - new Date(a.CreatedDate + ' ' + a.CreatedTime); });
+  return jsonResponse(true, 'OK', { notifications: relevant });
+}
+
+function apiGetAllNotificationsAdmin(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var sheet = getOrCreateSheet('Notifications', NOTIFICATIONS_HEADERS);
+  var rows = sheetToObjects(sheet).map(stripRowMeta);
+  rows.sort(function (a, b) { return new Date(b.CreatedDate + ' ' + b.CreatedTime) - new Date(a.CreatedDate + ' ' + a.CreatedTime); });
+  return jsonResponse(true, 'OK', { notifications: rows });
+}
+
+function apiDeleteNotification(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['notificationId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  var sheet = getSheetSafe('Notifications');
+  var rowNum = findRowByValue(sheet, 'NotificationID', p.notificationId);
+  if (rowNum === -1) return jsonResponse(false, 'Notification not found.');
+  sheet.deleteRow(rowNum);
+  return jsonResponse(true, 'Notification deleted.');
+}
+
+
+// ======================================================================================
+// EMAIL DELIVERY (NEW v3) — uses the built-in MailApp, no extra setup needed.
+// Quota: consumer Gmail accounts get 100 MailApp emails/day (1500 on Workspace).
+// ======================================================================================
+
+// Converts a data: URL (e.g. from canvas.toDataURL or a PDF blob) into a Blob
+// Apps Script can attach to an email.
+function dataUrlToBlob(dataUrl, filename) {
+  var match = String(dataUrl).match(/^data:([^;]+);base64,(.*)$/);
+  if (!match) throw new Error('Invalid data URL.');
+  var mimeType = match[1];
+  var base64 = match[2];
+  var bytes = Utilities.base64Decode(base64);
+  return Utilities.newBlob(bytes, mimeType, filename);
+}
+
+// Emails an image (e.g. a result/leaderboard screenshot) to a student's
+// registered email address. imageDataUrl must be a data:image/... base64 URL.
+function apiSendResultEmail(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['studentId', 'imageDataUrl']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var studentsSheet = getSheetSafe('Students');
+  var rowNum = findRowByValue(studentsSheet, 'StudentID', p.studentId);
+  if (rowNum === -1) return jsonResponse(false, 'Student not found.');
+  var studentRow = sheetToObjects(studentsSheet).find(function (s) { return s.StudentID === p.studentId; });
+  if (!studentRow || isEmpty(studentRow.Email)) return jsonResponse(false, 'This student has no registered email on file.');
+
+  try {
+    var blob = dataUrlToBlob(p.imageDataUrl, 'result.png');
+    var subject = p.subject || 'Your ARY Quize Bank Result';
+    var body = p.message || ('Hi ' + studentRow.Name + ',\n\nHere is your quiz result from ARY Quize Bank.\n\n— ' + auth.admin.Name);
+    MailApp.sendEmail({
+      to: studentRow.Email, subject: subject, body: body,
+      attachments: [blob], inlineImages: {}
+    });
+    return jsonResponse(true, 'Emailed to ' + studentRow.Email + '.');
+  } catch (err) {
+    return jsonResponse(false, 'Could not send email: ' + err.message);
+  }
+}
+
+// Emails a generated PDF performance report to a student.
+function apiSendReportEmail(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['studentId', 'pdfDataUrl']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var studentsSheet = getSheetSafe('Students');
+  var studentRow = sheetToObjects(studentsSheet).find(function (s) { return s.StudentID === p.studentId; });
+  if (!studentRow || isEmpty(studentRow.Email)) return jsonResponse(false, 'This student has no registered email on file.');
+
+  try {
+    var blob = dataUrlToBlob(p.pdfDataUrl, 'performance-report.pdf');
+    var subject = p.subject || 'Your ARY Quize Bank Performance Report';
+    var body = p.message || ('Hi ' + studentRow.Name + ',\n\nAttached is your performance report from ARY Quize Bank.\n\n— ' + auth.admin.Name);
+    MailApp.sendEmail({ to: studentRow.Email, subject: subject, body: body, attachments: [blob] });
+    return jsonResponse(true, 'Emailed to ' + studentRow.Email + '.');
+  } catch (err) {
+    return jsonResponse(false, 'Could not send email: ' + err.message);
+  }
+}
+
+
+// ======================================================================================
+// CERTIFICATES (NEW v4)
+// ======================================================================================
+
+// CertificateType: 'Completion' | 'OutstandingPerformance' | 'MockTest'. The
+// actual certificate artwork is rendered client-side (frontend); this just
+// stores the record of what was issued so students can see/re-download it
+// and admins can audit or revoke it.
+function apiIssueCertificate(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['studentId', 'certificateType', 'achievementText']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var studentsSheet = getSheetSafe('Students');
+  var studentRow = sheetToObjects(studentsSheet).find(function (s) { return s.StudentID === p.studentId; });
+  if (!studentRow) return jsonResponse(false, 'Student not found.');
+
+  var sheet = getOrCreateSheet('Certificates', CERTIFICATES_HEADERS);
+  var id = generateId('CERT');
+  sheet.appendRow([
+    id, p.studentId, studentRow.Name, p.certificateType, p.program || '', p.semester || '', p.shift || '',
+    p.rollNo || '', p.achievementText, p.score || '', p.totalQuizzes || '', p.mentorName || '', p.adminName || auth.admin.Name,
+    formatDate(new Date()), 'Active'
+  ]);
+  return jsonResponse(true, 'Certificate issued.', { certificateId: id });
+}
+
+function apiGetStudentCertificates(p) {
+  var missing = validateRequired(p, ['studentId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  var sheet = getOrCreateSheet('Certificates', CERTIFICATES_HEADERS);
+  var rows = sheetToObjects(sheet)
+    .filter(function (r) { return r.StudentID === p.studentId && String(r.Status).toLowerCase() === 'active'; })
+    .map(stripRowMeta);
+  return jsonResponse(true, 'OK', { certificates: rows });
+}
+
+function apiGetAllCertificatesAdmin(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var sheet = getOrCreateSheet('Certificates', CERTIFICATES_HEADERS);
+  var rows = sheetToObjects(sheet).map(stripRowMeta);
+  rows.sort(function (a, b) { return new Date(b.IssuedDate) - new Date(a.IssuedDate); });
+  return jsonResponse(true, 'OK', { certificates: rows });
+}
+
+function apiDeleteCertificate(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['certificateId']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  var sheet = getSheetSafe('Certificates');
+  var rowNum = findRowByValue(sheet, 'CertificateID', p.certificateId);
+  if (rowNum === -1) return jsonResponse(false, 'Certificate not found.');
+  sheet.deleteRow(rowNum);
+  return jsonResponse(true, 'Certificate revoked.');
+}
+
+
+// ======================================================================================
+// QUIZ QUESTION MANAGEMENT (NEW v5) — upload a brand-new quiz, or edit/add/
+// delete the questions inside an existing one, straight from the admin panel.
+// ======================================================================================
+
+// Creates a brand-new quiz tab with the standard Question/OptionA-D/CorrectAnswer
+// headers, writes every question row, and seeds a default QuizSettings entry
+// (Draft, not published) so it shows up immediately in Quiz Review.
+// questions: array of {question, optionA, optionB, optionC, optionD, correctAnswer}
+function apiCreateQuiz(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['quizName', 'questions']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var ss = getSpreadsheet();
+  if (isSystemSheet(p.quizName)) return jsonResponse(false, 'That name is reserved for a system sheet — choose another.');
+  if (ss.getSheetByName(p.quizName)) return jsonResponse(false, 'A quiz with this name already exists.');
+
+  var questions = typeof p.questions === 'string' ? JSON.parse(p.questions) : p.questions;
+  var validation = validateQuestionRows(questions);
+  if (!validation.ok) return jsonResponse(false, validation.message);
+
+  var sheet = ss.insertSheet(p.quizName);
+  sheet.getRange(1, 1, 1, QUIZ_TAB_HEADERS.length).setValues([QUIZ_TAB_HEADERS]);
+  sheet.setFrozenRows(1);
+  var rows = questions.map(function (q) { return [q.question, q.optionA, q.optionB, q.optionC, q.optionD, String(q.correctAnswer).toUpperCase()]; });
+  sheet.getRange(2, 1, rows.length, QUIZ_TAB_HEADERS.length).setValues(rows);
+
+  var settingsSheet = getOrCreateSheet('QuizSettings', QUIZSETTINGS_HEADERS);
+  settingsSheet.appendRow([p.quizName, false, '', '', p.durationMinutes || 30, false, p.quizType || 'Regular', false, false, formatDate(new Date()), 'Draft', '']);
+
+  return jsonResponse(true, 'Quiz created with ' + rows.length + ' question(s).', { quizName: p.quizName, questionCount: rows.length });
+}
+
+// Returns the full question set INCLUDING correct answers — admin-only, used
+// to populate the question editor. Never expose this to the student-facing
+// getQuizQuestions action.
+function apiGetQuizQuestionsAdmin(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['quizName']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var full = getQuizQuestionsFull(p.quizName);
+  if (full === null) return jsonResponse(false, 'Quiz tab not found.');
+  var questions = full.map(function (q) {
+    return { question: q.question, optionA: q.optionA, optionB: q.optionB, optionC: q.optionC, optionD: q.optionD, correctAnswer: q.correctAnswer };
+  });
+  return jsonResponse(true, 'OK', { quizName: p.quizName, questions: questions });
+}
+
+// Replaces the ENTIRE question set for a quiz tab in one shot — the admin
+// panel's editor always submits the full, current list, so add / edit /
+// delete / reorder are all just "what's in this array now".
+function apiUpdateQuizQuestions(p) {
+  var auth = requireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['quizName', 'questions']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  var sheet = getSheetSafe(p.quizName);
+  if (!sheet || isSystemSheet(p.quizName)) return jsonResponse(false, 'Quiz tab not found.');
+
+  var questions = typeof p.questions === 'string' ? JSON.parse(p.questions) : p.questions;
+  var validation = validateQuestionRows(questions);
+  if (!validation.ok) return jsonResponse(false, validation.message);
+
+  var lastRow = sheet.getLastRow();
+  if (lastRow > 1) sheet.getRange(2, 1, lastRow - 1, sheet.getLastColumn()).clearContent();
+  var rows = questions.map(function (q) { return [q.question, q.optionA, q.optionB, q.optionC, q.optionD, String(q.correctAnswer).toUpperCase()]; });
+  if (rows.length > 0) sheet.getRange(2, 1, rows.length, QUIZ_TAB_HEADERS.length).setValues(rows);
+
+  return jsonResponse(true, 'Saved ' + rows.length + ' question(s).', { questionCount: rows.length });
+}
+
+function validateQuestionRows(questions) {
+  if (!Array.isArray(questions) || questions.length === 0) return { ok: false, message: 'Add at least one question.' };
+  for (var i = 0; i < questions.length; i++) {
+    var q = questions[i];
+    if (isEmpty(q.question) || isEmpty(q.optionA) || isEmpty(q.optionB) || isEmpty(q.optionC) || isEmpty(q.optionD) || isEmpty(q.correctAnswer)) {
+      return { ok: false, message: 'Question ' + (i + 1) + ' is missing a field (question text, all 4 options, or the correct answer).' };
+    }
+    if (['A', 'B', 'C', 'D'].indexOf(String(q.correctAnswer).toUpperCase()) === -1) {
+      return { ok: false, message: 'Question ' + (i + 1) + ': correct answer must be A, B, C, or D.' };
+    }
+  }
+  return { ok: true };
 }
