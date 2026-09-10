@@ -8,6 +8,7 @@
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Sora:wght@500;600;700;800&family=Inter:wght@400;500;600;700&family=Great+Vibes&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="style.css">
+<link id="faviconLink" rel="icon" href="">
 </head>
 <body>
 
@@ -36,11 +37,14 @@
 <header id="publicHeader" class="public-header">
   <div class="public-header-inner">
     <a href="#" class="brand" data-nav="home">
-      <span class="brand-mark">AQ</span>
-      <span class="brand-text">ARY Quize Bank</span>
+      <img id="publicBrandLogo" class="brand-logo hidden" src="" alt="">
+      <span id="publicBrandMark" class="brand-mark">AQ</span>
+      <span id="publicBrandText" class="brand-text">ARY Quize Bank</span>
     </a>
     <nav class="public-nav">
       <a href="#" data-nav="home">Home</a>
+      <a href="#" data-nav="gallery">Gallery</a>
+      <a href="#" data-nav="faqs">FAQs</a>
       <a href="#" data-nav="contact">Contact</a>
       <a href="#" data-nav="student-login" class="btn btn-ghost btn-sm">Student Login</a>
       <a href="#" data-nav="admin-login" class="btn btn-outline btn-sm">Admin Login</a>
@@ -52,6 +56,8 @@
   </div>
   <div id="mobileNavPanel" class="mobile-nav-panel hidden">
     <a href="#" data-nav="home">Home</a>
+    <a href="#" data-nav="gallery">Gallery</a>
+    <a href="#" data-nav="faqs">FAQs</a>
     <a href="#" data-nav="contact">Contact</a>
     <a href="#" data-nav="student-login">Student Login</a>
     <a href="#" data-nav="admin-login">Admin Login</a>
@@ -94,6 +100,8 @@
       </div>
     </div>
   </section>
+
+  <div id="adStripPublic" class="ad-strip hidden"></div>
 
   <section class="features">
     <div class="section-inner">
@@ -141,6 +149,28 @@
     <h1>Contact with us</h1>
     <p class="section-sub">Reach the people behind ARY Quize Bank.</p>
     <div id="contactCardsPublic" class="contact-grid"></div>
+  </section>
+</main>
+
+<!-- ============================================================ -->
+<!-- SECTION: GALLERY (PUBLIC) -->
+<!-- ============================================================ -->
+<main id="section-gallery" class="app-section public-section hidden">
+  <section class="narrow-section">
+    <h1>Gallery</h1>
+    <p class="section-sub">Moments from campus, events and workshops.</p>
+    <div id="galleryGridPublic" class="gallery-grid"></div>
+  </section>
+</main>
+
+<!-- ============================================================ -->
+<!-- SECTION: FAQS (PUBLIC) -->
+<!-- ============================================================ -->
+<main id="section-faqs" class="app-section public-section hidden">
+  <section class="narrow-section">
+    <h1>Frequently Asked Questions</h1>
+    <p class="section-sub">Answers to the most common questions about registration and quizzes.</p>
+    <div id="faqListPublic" class="faq-list"></div>
   </section>
 </main>
 
@@ -267,6 +297,8 @@
       <a href="#" data-nav="student-leaderboard" data-icon="trophy">Leaderboard</a>
       <a href="#" data-nav="student-notifications" data-icon="bell">Notifications <span id="studentNotifDot" class="nav-dot hidden"></span></a>
       <a href="#" data-nav="student-certificates" data-icon="award">Certificates</a>
+      <a href="#" data-nav="student-gallery" data-icon="grid">Gallery</a>
+      <a href="#" data-nav="student-faqs" data-icon="list">FAQs</a>
       <a href="#" data-nav="student-profile" data-icon="user">Profile</a>
       <a href="#" data-nav="student-contact" data-icon="mail">Contact</a>
     </nav>
@@ -294,6 +326,7 @@
           </div>
           <button class="btn btn-primary btn-sm" id="missingPhotoBtn">Upload Profile Picture</button>
         </div>
+        <div id="adStripStudent" class="ad-strip hidden"></div>
         <div class="welcome-banner">
           <img id="dashPhoto" class="avatar-lg" src="" alt="">
           <div>
@@ -428,6 +461,18 @@
           <div id="profileFormMsg" class="form-success hidden"></div>
           <button type="submit" class="btn btn-primary" id="profileSaveBtn">Save Changes</button>
         </form>
+      </section>
+
+      <!-- Gallery -->
+      <section id="studentSectionGallery" class="content-section hidden">
+        <h2>Gallery</h2>
+        <div id="galleryGridStudent" class="gallery-grid"></div>
+      </section>
+
+      <!-- FAQs -->
+      <section id="studentSectionFaqs" class="content-section hidden">
+        <h2>Frequently Asked Questions</h2>
+        <div id="faqListStudent" class="faq-list"></div>
       </section>
 
       <!-- Contact -->

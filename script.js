@@ -250,14 +250,15 @@ const Session = {
 /* ============================================================================
    ROUTER
    ============================================================================ */
-const PUBLIC_SECTIONS = ['home', 'contact', 'student-login', 'student-register', 'admin-login', 'verify'];
-const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-leaderboard', 'student-notifications', 'student-certificates', 'student-profile', 'student-contact'];
+const PUBLIC_SECTIONS = ['home', 'contact', 'gallery', 'faqs', 'student-login', 'student-register', 'admin-login', 'verify'];
+const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-leaderboard', 'student-notifications', 'student-certificates', 'student-gallery', 'student-faqs', 'student-profile', 'student-contact'];
 const ADMIN_SECTIONS = ['admin-dashboard', 'admin-students', 'admin-quizzes', 'admin-review', 'admin-results', 'admin-leaderboard', 'admin-analytics', 'admin-announcements', 'admin-notifications', 'admin-certificates', 'admin-email', 'admin-performance', 'admin-contacts', 'admin-gallery', 'admin-advertisements', 'admin-faqs', 'admin-branding', 'admin-management', 'admin-profile'];
 
 const STUDENT_TITLES = {
   'student-dashboard': 'Dashboard', 'student-quizzes': 'Available Quizzes', 'student-attempt': 'Quiz in Progress',
   'student-results': 'Results', 'student-history': 'Quiz History', 'student-leaderboard': 'Leaderboard',
-  'student-notifications': 'Notifications', 'student-certificates': 'Certificates', 'student-profile': 'Profile', 'student-contact': 'Contact'
+  'student-notifications': 'Notifications', 'student-certificates': 'Certificates', 'student-gallery': 'Gallery',
+  'student-faqs': 'FAQs', 'student-profile': 'Profile', 'student-contact': 'Contact'
 };
 const ADMIN_TITLES = {
   'admin-dashboard': 'Dashboard', 'admin-students': 'Students', 'admin-quizzes': 'Quizzes', 'admin-review': 'Quiz Review',
@@ -279,6 +280,9 @@ async function navigate(name) {
     hideAll();
     document.getElementById('section-' + name).classList.remove('hidden');
     if (name === 'contact') renderPublicContact();
+    if (name === 'home') renderAdStrip('adStripPublic');
+    if (name === 'gallery') renderGallery('galleryGridPublic');
+    if (name === 'faqs') renderFaqs('faqListPublic');
     window.scrollTo(0, 0);
     closeMobileNav();
     return;
@@ -299,16 +303,19 @@ async function navigate(name) {
       'student-attempt': 'studentSectionAttempt', 'student-results': 'studentSectionResults',
       'student-history': 'studentSectionHistory', 'student-leaderboard': 'studentSectionLeaderboard',
       'student-notifications': 'studentSectionNotifications', 'student-certificates': 'studentSectionCertificates',
+      'student-gallery': 'studentSectionGallery', 'student-faqs': 'studentSectionFaqs',
       'student-profile': 'studentSectionProfile', 'student-contact': 'studentSectionContact'
     };
     document.getElementById(map[name]).classList.remove('hidden');
-    if (name === 'student-dashboard') loadStudentDashboard();
+    if (name === 'student-dashboard') { loadStudentDashboard(); renderAdStrip('adStripStudent'); }
     if (name === 'student-quizzes') loadStudentQuizzes();
     if (name === 'student-results') loadStudentResults();
     if (name === 'student-history') loadStudentHistory();
     if (name === 'student-leaderboard') loadStudentLeaderboard();
     if (name === 'student-notifications') loadStudentNotifications();
     if (name === 'student-certificates') loadStudentCertificates();
+    if (name === 'student-gallery') renderGallery('galleryGridStudent');
+    if (name === 'student-faqs') renderFaqs('faqListStudent');
     if (name === 'student-profile') loadStudentProfile();
     if (name === 'student-contact') renderContactCards('contactCardsStudent');
     window.scrollTo(0, 0);
@@ -406,6 +413,89 @@ async function renderContactCards(targetId) {
   `).join('');
 }
 function renderPublicContact() { renderContactCards('contactCardsPublic'); }
+
+async function renderGallery(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getGallery, {});
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.gallery || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No photos yet</h4></div>`; return; }
+  el.innerHTML = rows.map(g => `
+    <div class="gallery-card">
+      <img src="${escapeHtml(g.ImageUrl)}" alt="${escapeHtml(g.Title)}">
+      <div class="gallery-card-body">
+        <h4>${escapeHtml(g.Title)}</h4>
+        ${g.Caption ? `<p>${escapeHtml(g.Caption)}</p>` : ''}
+        ${g.Category ? `<span class="gallery-card-cat">${escapeHtml(g.Category)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function renderFaqs(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getFaqs, {});
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.faqs || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No FAQs yet</h4></div>`; return; }
+
+  const groups = {};
+  rows.forEach(f => { const cat = f.Category || 'General'; (groups[cat] = groups[cat] || []).push(f); });
+
+  el.innerHTML = Object.keys(groups).map(cat => `
+    ${Object.keys(groups).length > 1 ? `<div class="faq-category-label">${escapeHtml(cat)}</div>` : ''}
+    ${groups[cat].map((f, i) => `
+      <div class="faq-item">
+        <button type="button" class="faq-question" data-faq-toggle>${escapeHtml(f.Question)}</button>
+        <div class="faq-answer">${escapeHtml(f.Answer)}</div>
+      </div>
+    `).join('')}
+  `).join('');
+
+  el.querySelectorAll('[data-faq-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.faq-item').classList.toggle('is-open'));
+  });
+}
+
+async function renderAdStrip(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.classList.add('hidden');
+  el.innerHTML = '';
+  const res = await apiCall(API_ACTIONS.getAdvertisements, {});
+  if (!res.success) return;
+  const rows = res.data.advertisements || [];
+  if (rows.length === 0) return;
+  el.innerHTML = rows.map(a => `
+    <a class="ad-banner" href="${a.LinkUrl ? escapeHtml(a.LinkUrl) : '#'}" ${a.LinkUrl ? 'target="_blank" rel="noopener"' : 'onclick="return false;"'}>
+      <img src="${escapeHtml(a.ImageUrl)}" alt="${escapeHtml(a.Title)}">
+      <div class="ad-banner-title">${escapeHtml(a.Title)}</div>
+    </a>
+  `).join('');
+  el.classList.remove('hidden');
+}
+
+async function applyBranding() {
+  const res = await apiCall(API_ACTIONS.getBranding, {});
+  if (!res.success) return;
+  const b = res.data.branding || {};
+  if (b.SiteName) {
+    document.title = b.SiteName + ' — Assessment Platform';
+    document.getElementById('publicBrandText').textContent = b.SiteName;
+  }
+  if (b.LogoUrl) {
+    document.getElementById('publicBrandLogo').src = b.LogoUrl;
+    document.getElementById('publicBrandLogo').classList.remove('hidden');
+    document.getElementById('publicBrandMark').classList.add('hidden');
+  }
+  if (b.FaviconUrl) document.getElementById('faviconLink').setAttribute('href', b.FaviconUrl);
+  if (b.PrimaryColor) document.documentElement.style.setProperty('--color-primary', b.PrimaryColor);
+  if (b.AccentColor) document.documentElement.style.setProperty('--color-gold', b.AccentColor);
+}
 
 /* ============================================================================
    STUDENT: REGISTRATION
@@ -3127,6 +3217,7 @@ async function renderVerifyPage(certificateId) {
 
 (function init() {
   document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
+  applyBranding();
 
   const verifyId = new URLSearchParams(location.search).get('verify');
   if (verifyId) { navigate('verify'); renderVerifyPage(verifyId); return; }
