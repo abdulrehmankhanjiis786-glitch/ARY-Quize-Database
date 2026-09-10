@@ -83,7 +83,34 @@ const API_ACTIONS = {
   issueCertificate: 'issueCertificate',
   getStudentCertificates: 'getStudentCertificates',
   getAllCertificatesAdmin: 'getAllCertificatesAdmin',
-  deleteCertificate: 'deleteCertificate'
+  deleteCertificate: 'deleteCertificate',
+  // Certificates & Achievements — eligibility engine + approval workflow (v6)
+  runEligibilityScan: 'runEligibilityScan',
+  getCertificateEligibility: 'getCertificateEligibility',
+  approveEligibility: 'approveEligibility',
+  rejectEligibility: 'rejectEligibility',
+  generateCertificatesFromEligibility: 'generateCertificatesFromEligibility',
+  verifyCertificate: 'verifyCertificate',
+  getSignatures: 'getSignatures',
+  saveSignatures: 'saveSignatures',
+  // Email Center (v7)
+  sendBulkEmail: 'sendBulkEmail',
+  previewEmailAudience: 'previewEmailAudience',
+  // Content — Gallery, Advertisements, FAQs, Branding (Phase F)
+  getGallery: 'getGallery',
+  createGalleryItem: 'createGalleryItem',
+  updateGalleryItem: 'updateGalleryItem',
+  deleteGalleryItem: 'deleteGalleryItem',
+  getAdvertisements: 'getAdvertisements',
+  createAdvertisement: 'createAdvertisement',
+  updateAdvertisement: 'updateAdvertisement',
+  deleteAdvertisement: 'deleteAdvertisement',
+  getFaqs: 'getFaqs',
+  createFaq: 'createFaq',
+  updateFaq: 'updateFaq',
+  deleteFaq: 'deleteFaq',
+  getBranding: 'getBranding',
+  updateBranding: 'updateBranding'
 };
 
 /* ----------------------------------------------------------------------------
@@ -223,9 +250,9 @@ const Session = {
 /* ============================================================================
    ROUTER
    ============================================================================ */
-const PUBLIC_SECTIONS = ['home', 'contact', 'student-login', 'student-register', 'admin-login'];
+const PUBLIC_SECTIONS = ['home', 'contact', 'student-login', 'student-register', 'admin-login', 'verify'];
 const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-leaderboard', 'student-notifications', 'student-certificates', 'student-profile', 'student-contact'];
-const ADMIN_SECTIONS = ['admin-dashboard', 'admin-students', 'admin-quizzes', 'admin-review', 'admin-results', 'admin-leaderboard', 'admin-analytics', 'admin-announcements', 'admin-notifications', 'admin-certificates', 'admin-performance', 'admin-contacts', 'admin-management', 'admin-profile'];
+const ADMIN_SECTIONS = ['admin-dashboard', 'admin-students', 'admin-quizzes', 'admin-review', 'admin-results', 'admin-leaderboard', 'admin-analytics', 'admin-announcements', 'admin-notifications', 'admin-certificates', 'admin-email', 'admin-performance', 'admin-contacts', 'admin-gallery', 'admin-advertisements', 'admin-faqs', 'admin-branding', 'admin-management', 'admin-profile'];
 
 const STUDENT_TITLES = {
   'student-dashboard': 'Dashboard', 'student-quizzes': 'Available Quizzes', 'student-attempt': 'Quiz in Progress',
@@ -235,8 +262,9 @@ const STUDENT_TITLES = {
 const ADMIN_TITLES = {
   'admin-dashboard': 'Dashboard', 'admin-students': 'Students', 'admin-quizzes': 'Quizzes', 'admin-review': 'Quiz Review',
   'admin-results': 'Results', 'admin-leaderboard': 'Leaderboard', 'admin-analytics': 'Analytics', 'admin-announcements': 'Announcements',
-  'admin-notifications': 'Notifications', 'admin-certificates': 'Certificates', 'admin-performance': 'Student Performance',
-  'admin-contacts': 'Contacts', 'admin-management': 'Admin Management', 'admin-profile': 'My Profile'
+  'admin-notifications': 'Notifications', 'admin-certificates': 'Certificates', 'admin-email': 'Email Center', 'admin-performance': 'Student Performance',
+  'admin-contacts': 'Contacts', 'admin-gallery': 'Gallery', 'admin-advertisements': 'Advertisements',
+  'admin-faqs': 'FAQs', 'admin-branding': 'Branding', 'admin-management': 'Admin Management', 'admin-profile': 'My Profile'
 };
 
 function hideAll() {
@@ -303,12 +331,15 @@ async function navigate(name) {
       'admin-results': 'adminSectionResults', 'admin-leaderboard': 'adminSectionLeaderboard',
       'admin-analytics': 'adminSectionAnalytics',
       'admin-announcements': 'adminSectionAnnouncements', 'admin-notifications': 'adminSectionNotifications',
-      'admin-certificates': 'adminSectionCertificates',
+      'admin-certificates': 'adminSectionCertificates', 'admin-email': 'adminSectionEmail',
       'admin-performance': 'adminSectionPerformance', 'admin-contacts': 'adminSectionContacts',
+      'admin-gallery': 'adminSectionGallery', 'admin-advertisements': 'adminSectionAdvertisements',
+      'admin-faqs': 'adminSectionFaqs', 'admin-branding': 'adminSectionBranding',
       'admin-management': 'adminSectionAdmins', 'admin-profile': 'adminSectionProfile'
     };
     document.getElementById(map[name]).classList.remove('hidden');
     if (name === 'admin-dashboard') loadAdminDashboard();
+    if (name === 'admin-email') updateEmailAudienceCount();
     if (name === 'admin-students') loadAdminStudents();
     if (name === 'admin-quizzes') loadAdminQuizzes();
     if (name === 'admin-review') loadAdminReview();
@@ -317,8 +348,12 @@ async function navigate(name) {
     if (name === 'admin-analytics') loadAdminAnalytics();
     if (name === 'admin-announcements') loadAdminAnnouncements();
     if (name === 'admin-notifications') loadAdminNotifications();
-    if (name === 'admin-certificates') loadAdminCertificates();
+    if (name === 'admin-certificates') loadCertEligibility('PendingReview');
     if (name === 'admin-contacts') loadAdminContacts();
+    if (name === 'admin-gallery') loadAdminGallery();
+    if (name === 'admin-advertisements') loadAdminAdvertisements();
+    if (name === 'admin-faqs') loadAdminFaqs();
+    if (name === 'admin-branding') loadAdminBranding();
     if (name === 'admin-management') loadAdminManagement();
     if (name === 'admin-profile') loadAdminProfile();
     window.scrollTo(0, 0);
@@ -401,6 +436,7 @@ document.getElementById('studentRegisterForm').addEventListener('submit', async 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.classList.remove('hidden'); return; }
   if (pw !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
   if (pw.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
+  if (!regPhotoData) { errEl.textContent = 'Profile Picture Required – Please upload your profile picture to complete your registration.'; errEl.classList.remove('hidden'); return; }
 
   const btn = document.getElementById('studentRegisterBtn');
   setBtnLoading(btn, true);
@@ -456,6 +492,8 @@ function applyStudentSessionToUI() {
   document.getElementById('studentSidebarPhoto').src = photoOrDefault(s.photo);
 }
 
+document.getElementById('missingPhotoBtn').addEventListener('click', () => navigate('student-profile'));
+
 document.getElementById('studentLogoutBtn').addEventListener('click', async () => {
   const ok = await confirmModal('Log out?', 'You will need to log in again to access your quizzes.');
   if (!ok) return;
@@ -474,6 +512,7 @@ async function loadStudentDashboard() {
   applyStudentSessionToUI();
   document.getElementById('dashPhoto').src = photoOrDefault(s.photo);
   document.getElementById('dashWelcome').textContent = `Welcome back, ${s.name}`;
+  document.getElementById('missingPhotoBanner').classList.toggle('hidden', !!s.photo);
 
   const grid = document.getElementById('studentStatGrid');
   grid.innerHTML = `<div class="empty-state">Loading your stats…</div>`;
@@ -793,6 +832,8 @@ async function loadStudentHistory() {
 function renderResultCards(container, rows) {
   if (!rows || rows.length === 0) { container.innerHTML = `<div class="empty-state"><h4>No results yet</h4><p>Your quiz attempts will show up here.</p></div>`; return; }
   container.className = 'result-cards';
+  resultCache = {};
+  rows.forEach(r => { resultCache[r.ResultID] = r; });
   container.innerHTML = rows.map((r, i) => {
     const cardId = `resultCard-${i}-${r.ResultID}`;
     return `
@@ -809,9 +850,11 @@ function renderResultCards(container, rows) {
         <span><strong>${escapeHtml(r.Score)}</strong>/${escapeHtml(r.TotalQuestions)} score</span>
         <span><strong>${escapeHtml(r.CorrectAnswers)}</strong> correct</span>
         <span><strong>${escapeHtml(r.WrongAnswers)}</strong> wrong</span>
+        ${!isEmptyVal(r.SkippedAnswers) ? `<span><strong>${escapeHtml(r.SkippedAnswers)}</strong> skipped</span>` : ''}
         ${!isEmptyVal(r.TimeTakenSeconds) ? `<span><strong>${formatDuration(r.TimeTakenSeconds)}</strong> taken</span>` : ''}
       </div>
       <div class="result-card-actions">
+        <button class="btn btn-outline btn-sm" data-view-report="${r.ResultID}">View Details</button>
         <button class="btn btn-outline btn-sm" data-screenshot="${cardId}" data-filename="${escapeHtml(r.QuizName)}-result.png">Download Screenshot</button>
       </div>
     </div>`;
@@ -820,13 +863,116 @@ function renderResultCards(container, rows) {
   container.querySelectorAll('[data-screenshot]').forEach(btn => {
     btn.addEventListener('click', () => downloadElementAsImage(btn.dataset.screenshot, btn.dataset.filename));
   });
+  container.querySelectorAll('[data-view-report]').forEach(btn => {
+    btn.addEventListener('click', () => openReportModal(resultCache[btn.dataset.viewReport]));
+  });
 }
+let resultCache = {};
 function isEmptyVal(v) { return v === undefined || v === null || v === ''; }
 function formatDuration(totalSeconds) {
   const s = Number(totalSeconds) || 0;
   const m = Math.floor(s / 60), sec = s % 60;
   return m > 0 ? `${m}m ${sec}s` : `${sec}s`;
 }
+
+/* ============================================================================
+   DETAILED PERFORMANCE REPORT MODAL (question-wise review + PDF/print)
+   Shared by student "View Details" and admin's detailed answer-wise report.
+   ============================================================================ */
+function openReportModal(r) {
+  if (!r) { toast('Could not load that result.', 'error'); return; }
+  const s = Session.getStudent();
+  const studentPhoto = r.StudentPhoto || (s && s.studentId === r.StudentID ? s.photo : '') || '';
+
+  document.getElementById('reportStudentPhoto').src = photoOrDefault(studentPhoto);
+  document.getElementById('reportMetaGrid').innerHTML = `
+    <div><span>Student</span>${escapeHtml(r.StudentName || '—')}</div>
+    <div><span>Quiz</span>${escapeHtml(r.QuizName || '—')}</div>
+    <div><span>Subject</span>${escapeHtml(r.Subject || '—')}</div>
+    <div><span>Date</span>${escapeHtml(r.Date || '—')} ${escapeHtml(r.Time || '')}</div>
+    <div><span>Time Taken</span>${isEmptyVal(r.TimeTakenSeconds) ? '—' : formatDuration(r.TimeTakenSeconds)}</div>
+  `;
+  document.getElementById('reportStatGrid').innerHTML = `
+    <div class="stat-card"><div class="stat-label">Score</div><div class="stat-value">${escapeHtml(r.Score)}/${escapeHtml(r.TotalQuestions)}</div></div>
+    <div class="stat-card"><div class="stat-label">Percentage</div><div class="stat-value">${fmtPct(r.Percentage)}</div></div>
+    <div class="stat-card"><div class="stat-label">Correct</div><div class="stat-value">${escapeHtml(r.CorrectAnswers ?? 0)}</div></div>
+    <div class="stat-card"><div class="stat-label">Incorrect</div><div class="stat-value">${escapeHtml(r.WrongAnswers ?? 0)}</div></div>
+    <div class="stat-card"><div class="stat-label">Skipped</div><div class="stat-value">${escapeHtml(r.SkippedAnswers ?? 0)}</div></div>
+  `;
+
+  const listEl = document.getElementById('reportQuestionList');
+  const details = r.AnswerDetails;
+  if (!details || details.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><h4>Question-wise detail not available</h4><p>This attempt was recorded before detailed answer tracking was added.</p></div>`;
+  } else {
+    listEl.innerHTML = details.map((q, i) => {
+      const statusCls = q.status === 'Correct' ? 'is-correct' : q.status === 'Incorrect' ? 'is-incorrect' : 'is-skipped';
+      const statusIcon = q.status === 'Correct' ? '✓' : q.status === 'Incorrect' ? '✗' : '–';
+      const opts = [['A', q.optionA], ['B', q.optionB], ['C', q.optionC], ['D', q.optionD]];
+      return `
+      <div class="report-question-item ${statusCls}">
+        <div class="report-q-head">
+          <span>Q${i + 1}. ${escapeHtml(q.question)}</span>
+          <span class="report-q-status ${statusCls}">${statusIcon} ${escapeHtml(q.status)}</span>
+        </div>
+        <div class="report-q-options">
+          ${opts.map(([key, text]) => {
+            let cls = 'report-q-opt';
+            if (key === q.correctAnswer) cls += ' is-correct-answer';
+            if (key === q.selected && q.status === 'Incorrect') cls += ' is-wrong-selected';
+            return `<div class="${cls}">${key}. ${escapeHtml(text)}${key === q.selected ? ' (Your answer)' : ''}${key === q.correctAnswer ? ' (Correct answer)' : ''}</div>`;
+          }).join('')}
+        </div>
+      </div>`;
+    }).join('');
+  }
+
+  reportModalCurrent = r;
+  openModal('reportModal');
+}
+let reportModalCurrent = null;
+
+document.getElementById('reportCloseBtn').addEventListener('click', () => closeModal('reportModal'));
+
+document.getElementById('reportPrintBtn').addEventListener('click', () => {
+  const html = document.getElementById('reportCaptureArea').innerHTML;
+  const win = window.open('', '_blank');
+  win.document.write(`<html><head><title>Performance Report</title>
+    <style>body{font-family:Inter,sans-serif;padding:24px;color:#0F172A;}
+    .report-doc-head{display:flex;justify-content:space-between;align-items:center;border-bottom:2px solid #2563EB;padding-bottom:16px;margin-bottom:16px;}
+    .report-doc-meta{display:grid;grid-template-columns:repeat(3,1fr);gap:10px 18px;margin-bottom:18px;font-size:.9rem;}
+    .report-doc-meta div span{display:block;color:#5B6B84;font-size:.72rem;text-transform:uppercase;}
+    .report-doc-stats{display:flex;gap:10px;margin-bottom:20px;flex-wrap:wrap;}
+    .stat-card{border:1px solid #E3E8F0;border-radius:10px;padding:10px 14px;}
+    .stat-label{font-size:.72rem;color:#5B6B84;} .stat-value{font-size:1.3rem;font-weight:700;}
+    .report-question-item{border:1px solid #E3E8F0;border-left:4px solid #999;border-radius:8px;padding:10px 14px;margin-bottom:8px;}
+    .is-correct{border-left-color:#15803D;} .is-incorrect{border-left-color:#DC2626;} .is-skipped{border-left-color:#8896AB;}
+    .report-q-head{display:flex;justify-content:space-between;font-weight:600;margin-bottom:6px;gap:10px;}
+    .report-q-opt{padding:4px 8px;background:#F6F8FB;border-radius:6px;margin-bottom:4px;font-size:.85rem;}
+    .is-correct-answer{background:#DCFCE7;font-weight:600;} .is-wrong-selected{background:#FEE2E2;text-decoration:line-through;}
+    img.avatar-sm{width:36px;height:36px;border-radius:50%;object-fit:cover;}
+    </style></head><body>${html}</body></html>`);
+  win.document.close();
+  win.focus();
+  setTimeout(() => win.print(), 300);
+});
+
+document.getElementById('reportDownloadBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('reportDownloadBtn');
+  setBtnLoading(btn, true);
+  try {
+    const canvas = await html2canvas(document.getElementById('reportCaptureArea'), { backgroundColor: '#ffffff', scale: 3 });
+    const { jsPDF } = window.jspdf;
+    const pdf = new jsPDF({ orientation: 'portrait', unit: 'px', format: [canvas.width / 3, canvas.height / 3] });
+    pdf.addImage(canvas.toDataURL('image/png'), 'PNG', 0, 0, canvas.width / 3, canvas.height / 3);
+    const name = reportModalCurrent ? `${reportModalCurrent.StudentName}-${reportModalCurrent.QuizName}-report.pdf` : 'performance-report.pdf';
+    pdf.save(name);
+  } catch (err) {
+    toast('Could not generate the PDF.', 'error');
+  } finally {
+    setBtnLoading(btn, false);
+  }
+});
 
 /* ============================================================================
    STUDENT: PROFILE
@@ -916,7 +1062,7 @@ function applyAdminSessionToUI() {
 
 // Super Admins see every section. Regular admins see Dashboard and My Profile
 // plus whatever sections are in their comma-separated Permissions string
-// (students, quizzes, review, results, analytics, announcements, contacts, admins).
+// (students, quizzes, review, results, analytics, announcements, contacts, admins, content).
 function applyAdminRoleVisibility(role, permissionsStr) {
   const isSuperAdmin = String(role || '').toLowerCase().includes('super');
   const perms = String(permissionsStr || '').split(',').map(s => s.trim()).filter(Boolean);
@@ -924,8 +1070,10 @@ function applyAdminRoleVisibility(role, permissionsStr) {
     'admin-students': 'students', 'admin-quizzes': 'quizzes', 'admin-review': 'review',
     'admin-results': 'results', 'admin-leaderboard': 'results', 'admin-analytics': 'analytics',
     'admin-announcements': 'announcements', 'admin-notifications': 'announcements',
-    'admin-certificates': 'students',
-    'admin-contacts': 'contacts', 'admin-management': 'admins'
+    'admin-certificates': 'students', 'admin-email': 'students',
+    'admin-contacts': 'contacts', 'admin-management': 'admins',
+    'admin-gallery': 'content', 'admin-advertisements': 'content',
+    'admin-faqs': 'content', 'admin-branding': 'content'
   };
   document.querySelectorAll('#adminNav a').forEach(a => {
     const name = a.dataset.nav;
@@ -1021,18 +1169,20 @@ function renderStudentsTable() {
   const el = document.getElementById('adminStudentsTable');
   const query = document.getElementById('studentSearchInput').value.trim().toLowerCase();
   let rows = allStudentsCache;
-  if (studentStatusFilter !== 'All') rows = rows.filter(s => s.Status === studentStatusFilter);
+  if (studentStatusFilter === 'MissingPhoto') rows = rows.filter(s => !s.Photo);
+  else if (studentStatusFilter !== 'All') rows = rows.filter(s => s.Status === studentStatusFilter);
   if (query) rows = rows.filter(s => `${s.Name} ${s.Email} ${s.Class}`.toLowerCase().includes(query));
 
   if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No matching students</h4></div>`; return; }
 
-  el.innerHTML = `<table><thead><tr><th>Student</th><th>Email</th><th>Class</th><th>Status</th><th>Registered</th><th>Actions</th></tr></thead><tbody>
+  el.innerHTML = `<table><thead><tr><th>Student</th><th>Email</th><th>Class</th><th>Status</th><th>Photo</th><th>Registered</th><th>Actions</th></tr></thead><tbody>
     ${rows.map(s => `
       <tr>
         <td><div class="table-name-cell"><img class="avatar-sm" src="${photoOrDefault(s.Photo)}" alt=""> ${escapeHtml(s.Name)}</div></td>
         <td>${escapeHtml(s.Email)}</td>
         <td>${escapeHtml(s.Class)}</td>
         <td>${badge(s.Status, statusBadgeClass(s.Status))}</td>
+        <td>${s.Photo ? badge('Uploaded', 'success') : badge('Missing', 'warning')}</td>
         <td>${escapeHtml(s.RegistrationDate)}</td>
         <td class="row-actions">
           ${s.Status !== 'Approved' ? `<button class="btn btn-success btn-sm" data-action="approve" data-id="${escapeHtml(s.StudentID)}">Approve</button>` : ''}
@@ -1141,6 +1291,7 @@ async function handleDeleteQuiz(quizName, targetId) {
 
 function openQuizSettingsModal(quizName, settings) {
   document.getElementById('quizSettingsName').textContent = quizName;
+  document.getElementById('quizSubject').value = settings.Subject || '';
   document.getElementById('quizDuration').value = settings.DurationMinutes || 30;
   document.getElementById('quizType').value = settings.QuizType || 'Regular';
   document.getElementById('quizAllowMultiple').checked = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
@@ -1420,11 +1571,16 @@ function renderAdminResultsTable(rows) {
       <td>${escapeHtml(r.Date)}</td>
       <td>${escapeHtml(r.Time)}</td>
       <td class="row-actions">
+        <button class="btn btn-ghost btn-sm" data-action="view-result" data-id="${escapeHtml(r.ResultID)}">View Details</button>
         <button class="btn btn-outline btn-sm" data-action="edit-result" data-id="${escapeHtml(r.ResultID)}">Edit</button>
         <button class="btn btn-danger btn-sm" data-action="delete-result" data-id="${escapeHtml(r.ResultID)}">Delete</button>
       </td>
     </tr>`).join('')}
   </tbody></table>`;
+
+  el.querySelectorAll('[data-action="view-result"]').forEach(btn => {
+    btn.addEventListener('click', () => openReportModal(rows.find(x => x.ResultID === btn.dataset.id)));
+  });
 
   el.querySelectorAll('[data-action="delete-result"]').forEach(btn => {
     btn.addEventListener('click', async () => {
@@ -1665,6 +1821,329 @@ document.getElementById('contactForm').addEventListener('submit', async (e) => {
     : await apiCall(API_ACTIONS.createContact, payload);
   setBtnLoading(btn, false);
   if (res.success) { toast(id ? 'Contact updated.' : 'Contact created.', 'success'); closeModal('contactModal'); loadAdminContacts(); }
+  else toast(res.message || 'Save failed.', 'error');
+});
+
+/* ============================================================================
+   ADMIN: GALLERY (CRUD)
+   ============================================================================ */
+let galleryPhotoData = '';
+document.getElementById('galleryPhotoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    galleryPhotoData = await resizeImageFile(file, 900, 0.82);
+    document.getElementById('galleryPhotoPreview').src = galleryPhotoData;
+  } catch (err) { toast('Could not read that image.', 'error'); }
+});
+
+async function loadAdminGallery() {
+  const el = document.getElementById('adminGalleryTable');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getGallery, adminAuthParams());
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.gallery || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No photos yet</h4><p>Add one to show it on the public gallery.</p></div>`; return; }
+
+  el.innerHTML = `<table><thead><tr><th></th><th>Title</th><th>Category</th><th>Sort</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${rows.map(g => `<tr>
+      <td><img class="table-thumb" src="${escapeHtml(g.ImageUrl)}" alt=""></td>
+      <td>${escapeHtml(g.Title)}</td>
+      <td>${escapeHtml(g.Category)}</td>
+      <td>${escapeHtml(String(g.SortOrder ?? 0))}</td>
+      <td>${badge(g.Status, statusBadgeClass(g.Status))}</td>
+      <td class="row-actions">
+        <button class="btn btn-outline btn-sm" data-action="edit" data-id="${escapeHtml(g.GalleryID)}">Edit</button>
+        <button class="btn btn-danger btn-sm" data-action="delete" data-id="${escapeHtml(g.GalleryID)}">Delete</button>
+      </td>
+    </tr>`).join('')}
+  </tbody></table>`;
+
+  el.querySelectorAll('[data-action="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const g = rows.find(r => r.GalleryID === btn.dataset.id);
+      galleryPhotoData = g.ImageUrl || '';
+      document.getElementById('galleryModalTitle').textContent = 'Edit Photo';
+      document.getElementById('galleryId').value = g.GalleryID;
+      document.getElementById('galleryPhotoPreview').src = g.ImageUrl || '';
+      document.getElementById('galleryTitle').value = g.Title || '';
+      document.getElementById('galleryCategory').value = g.Category || '';
+      document.getElementById('galleryCaption').value = g.Caption || '';
+      document.getElementById('gallerySortOrder').value = g.SortOrder ?? 0;
+      document.getElementById('galleryStatus').value = g.Status || 'Active';
+      openModal('galleryModal');
+    });
+  });
+  el.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirmModal('Delete photo?', 'This cannot be undone.');
+      if (!ok) return;
+      const res2 = await apiCall(API_ACTIONS.deleteGalleryItem, { galleryId: btn.dataset.id, ...adminAuthParams() });
+      if (res2.success) { toast('Photo deleted.', 'success'); loadAdminGallery(); } else toast(res2.message || 'Delete failed.', 'error');
+    });
+  });
+}
+document.getElementById('newGalleryBtn').addEventListener('click', () => {
+  galleryPhotoData = '';
+  document.getElementById('galleryModalTitle').textContent = 'New Photo';
+  document.getElementById('galleryForm').reset();
+  document.getElementById('galleryId').value = '';
+  document.getElementById('galleryPhotoPreview').src = '';
+  openModal('galleryModal');
+});
+document.getElementById('galleryCancelBtn').addEventListener('click', () => closeModal('galleryModal'));
+document.getElementById('galleryForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('galleryId').value;
+  if (!galleryPhotoData) { toast('Please upload a photo.', 'error'); return; }
+  const btn = document.getElementById('gallerySaveBtn');
+  setBtnLoading(btn, true);
+  const payload = {
+    title: document.getElementById('galleryTitle').value.trim(),
+    imageUrl: galleryPhotoData,
+    category: document.getElementById('galleryCategory').value.trim(),
+    caption: document.getElementById('galleryCaption').value.trim(),
+    sortOrder: document.getElementById('gallerySortOrder').value,
+    status: document.getElementById('galleryStatus').value,
+    ...adminAuthParams()
+  };
+  const res = id
+    ? await apiCall(API_ACTIONS.updateGalleryItem, { galleryId: id, ...payload })
+    : await apiCall(API_ACTIONS.createGalleryItem, payload);
+  setBtnLoading(btn, false);
+  if (res.success) { toast(id ? 'Photo updated.' : 'Photo added.', 'success'); closeModal('galleryModal'); loadAdminGallery(); }
+  else toast(res.message || 'Save failed.', 'error');
+});
+
+/* ============================================================================
+   ADMIN: ADVERTISEMENTS (CRUD)
+   ============================================================================ */
+let advertisementPhotoData = '';
+document.getElementById('advertisementPhotoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    advertisementPhotoData = await resizeImageFile(file, 1000, 0.82);
+    document.getElementById('advertisementPhotoPreview').src = advertisementPhotoData;
+  } catch (err) { toast('Could not read that image.', 'error'); }
+});
+
+async function loadAdminAdvertisements() {
+  const el = document.getElementById('adminAdvertisementsTable');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getAdvertisements, adminAuthParams());
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.advertisements || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No advertisements yet</h4><p>Add one to show it on the public site.</p></div>`; return; }
+
+  el.innerHTML = `<table><thead><tr><th></th><th>Title</th><th>Start</th><th>End</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${rows.map(a => `<tr>
+      <td><img class="table-thumb" src="${escapeHtml(a.ImageUrl)}" alt=""></td>
+      <td>${escapeHtml(a.Title)}</td>
+      <td>${escapeHtml(a.StartDate) || '—'}</td>
+      <td>${escapeHtml(a.EndDate) || '—'}</td>
+      <td>${badge(a.Status, statusBadgeClass(a.Status))}</td>
+      <td class="row-actions">
+        <button class="btn btn-outline btn-sm" data-action="edit" data-id="${escapeHtml(a.AdID)}">Edit</button>
+        <button class="btn btn-danger btn-sm" data-action="delete" data-id="${escapeHtml(a.AdID)}">Delete</button>
+      </td>
+    </tr>`).join('')}
+  </tbody></table>`;
+
+  el.querySelectorAll('[data-action="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const a = rows.find(r => r.AdID === btn.dataset.id);
+      advertisementPhotoData = a.ImageUrl || '';
+      document.getElementById('advertisementModalTitle').textContent = 'Edit Advertisement';
+      document.getElementById('advertisementId').value = a.AdID;
+      document.getElementById('advertisementPhotoPreview').src = a.ImageUrl || '';
+      document.getElementById('advertisementTitle').value = a.Title || '';
+      document.getElementById('advertisementLinkUrl').value = a.LinkUrl || '';
+      document.getElementById('advertisementStartDate').value = a.StartDate || '';
+      document.getElementById('advertisementEndDate').value = a.EndDate || '';
+      document.getElementById('advertisementSortOrder').value = a.SortOrder ?? 0;
+      document.getElementById('advertisementStatus').value = a.Status || 'Active';
+      openModal('advertisementModal');
+    });
+  });
+  el.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirmModal('Delete advertisement?', 'This cannot be undone.');
+      if (!ok) return;
+      const res2 = await apiCall(API_ACTIONS.deleteAdvertisement, { adId: btn.dataset.id, ...adminAuthParams() });
+      if (res2.success) { toast('Advertisement deleted.', 'success'); loadAdminAdvertisements(); } else toast(res2.message || 'Delete failed.', 'error');
+    });
+  });
+}
+document.getElementById('newAdvertisementBtn').addEventListener('click', () => {
+  advertisementPhotoData = '';
+  document.getElementById('advertisementModalTitle').textContent = 'New Advertisement';
+  document.getElementById('advertisementForm').reset();
+  document.getElementById('advertisementId').value = '';
+  document.getElementById('advertisementPhotoPreview').src = '';
+  openModal('advertisementModal');
+});
+document.getElementById('advertisementCancelBtn').addEventListener('click', () => closeModal('advertisementModal'));
+document.getElementById('advertisementForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('advertisementId').value;
+  if (!advertisementPhotoData) { toast('Please upload a banner image.', 'error'); return; }
+  const btn = document.getElementById('advertisementSaveBtn');
+  setBtnLoading(btn, true);
+  const payload = {
+    title: document.getElementById('advertisementTitle').value.trim(),
+    imageUrl: advertisementPhotoData,
+    linkUrl: document.getElementById('advertisementLinkUrl').value.trim(),
+    startDate: document.getElementById('advertisementStartDate').value,
+    endDate: document.getElementById('advertisementEndDate').value,
+    sortOrder: document.getElementById('advertisementSortOrder').value,
+    status: document.getElementById('advertisementStatus').value,
+    ...adminAuthParams()
+  };
+  const res = id
+    ? await apiCall(API_ACTIONS.updateAdvertisement, { adId: id, ...payload })
+    : await apiCall(API_ACTIONS.createAdvertisement, payload);
+  setBtnLoading(btn, false);
+  if (res.success) { toast(id ? 'Advertisement updated.' : 'Advertisement created.', 'success'); closeModal('advertisementModal'); loadAdminAdvertisements(); }
+  else toast(res.message || 'Save failed.', 'error');
+});
+
+/* ============================================================================
+   ADMIN: FAQS (CRUD)
+   ============================================================================ */
+async function loadAdminFaqs() {
+  const el = document.getElementById('adminFaqsTable');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getFaqs, adminAuthParams());
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.faqs || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No FAQs yet</h4><p>Add one to show it on the public site.</p></div>`; return; }
+
+  el.innerHTML = `<table><thead><tr><th>Question</th><th>Category</th><th>Sort</th><th>Status</th><th>Actions</th></tr></thead><tbody>
+    ${rows.map(f => `<tr>
+      <td>${escapeHtml(f.Question)}</td>
+      <td>${escapeHtml(f.Category)}</td>
+      <td>${escapeHtml(String(f.SortOrder ?? 0))}</td>
+      <td>${badge(f.Status, statusBadgeClass(f.Status))}</td>
+      <td class="row-actions">
+        <button class="btn btn-outline btn-sm" data-action="edit" data-id="${escapeHtml(f.FaqID)}">Edit</button>
+        <button class="btn btn-danger btn-sm" data-action="delete" data-id="${escapeHtml(f.FaqID)}">Delete</button>
+      </td>
+    </tr>`).join('')}
+  </tbody></table>`;
+
+  el.querySelectorAll('[data-action="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const f = rows.find(r => r.FaqID === btn.dataset.id);
+      document.getElementById('faqModalTitle').textContent = 'Edit FAQ';
+      document.getElementById('faqId').value = f.FaqID;
+      document.getElementById('faqQuestion').value = f.Question || '';
+      document.getElementById('faqAnswer').value = f.Answer || '';
+      document.getElementById('faqCategory').value = f.Category || '';
+      document.getElementById('faqSortOrder').value = f.SortOrder ?? 0;
+      document.getElementById('faqStatus').value = f.Status || 'Active';
+      openModal('faqModal');
+    });
+  });
+  el.querySelectorAll('[data-action="delete"]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const ok = await confirmModal('Delete FAQ?', 'This cannot be undone.');
+      if (!ok) return;
+      const res2 = await apiCall(API_ACTIONS.deleteFaq, { faqId: btn.dataset.id, ...adminAuthParams() });
+      if (res2.success) { toast('FAQ deleted.', 'success'); loadAdminFaqs(); } else toast(res2.message || 'Delete failed.', 'error');
+    });
+  });
+}
+document.getElementById('newFaqBtn').addEventListener('click', () => {
+  document.getElementById('faqModalTitle').textContent = 'New FAQ';
+  document.getElementById('faqForm').reset();
+  document.getElementById('faqId').value = '';
+  openModal('faqModal');
+});
+document.getElementById('faqCancelBtn').addEventListener('click', () => closeModal('faqModal'));
+document.getElementById('faqForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('faqId').value;
+  const btn = document.getElementById('faqSaveBtn');
+  setBtnLoading(btn, true);
+  const payload = {
+    question: document.getElementById('faqQuestion').value.trim(),
+    answer: document.getElementById('faqAnswer').value.trim(),
+    category: document.getElementById('faqCategory').value.trim(),
+    sortOrder: document.getElementById('faqSortOrder').value,
+    status: document.getElementById('faqStatus').value,
+    ...adminAuthParams()
+  };
+  const res = id
+    ? await apiCall(API_ACTIONS.updateFaq, { faqId: id, ...payload })
+    : await apiCall(API_ACTIONS.createFaq, payload);
+  setBtnLoading(btn, false);
+  if (res.success) { toast(id ? 'FAQ updated.' : 'FAQ added.', 'success'); closeModal('faqModal'); loadAdminFaqs(); }
+  else toast(res.message || 'Save failed.', 'error');
+});
+
+/* ============================================================================
+   ADMIN: BRANDING (singleton settings)
+   ============================================================================ */
+let brandLogoData = '';
+let brandFaviconData = '';
+document.getElementById('brandLogoInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    brandLogoData = await resizeImageFile(file, 400, 0.85);
+    document.getElementById('brandLogoPreview').src = brandLogoData;
+  } catch (err) { toast('Could not read that image.', 'error'); }
+});
+document.getElementById('brandFaviconInput').addEventListener('change', async (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  try {
+    brandFaviconData = await resizeImageFile(file, 96, 0.9);
+    document.getElementById('brandFaviconPreview').src = brandFaviconData;
+  } catch (err) { toast('Could not read that image.', 'error'); }
+});
+
+async function loadAdminBranding() {
+  const res = await apiCall(API_ACTIONS.getBranding, adminAuthParams());
+  if (!res.success) { toast(res.message || 'Could not load branding.', 'error'); return; }
+  const b = res.data.branding || {};
+  brandLogoData = b.LogoUrl || '';
+  brandFaviconData = b.FaviconUrl || '';
+  document.getElementById('brandSiteName').value = b.SiteName || '';
+  document.getElementById('brandTagline').value = b.Tagline || '';
+  document.getElementById('brandLogoPreview').src = b.LogoUrl || '';
+  document.getElementById('brandFaviconPreview').src = b.FaviconUrl || '';
+  document.getElementById('brandPrimaryColor').value = b.PrimaryColor || '';
+  document.getElementById('brandAccentColor').value = b.AccentColor || '';
+  document.getElementById('brandContactEmail').value = b.ContactEmail || '';
+  document.getElementById('brandContactPhone').value = b.ContactPhone || '';
+  document.getElementById('brandAddress').value = b.Address || '';
+  document.getElementById('brandFacebookUrl').value = b.FacebookUrl || '';
+  document.getElementById('brandInstagramUrl').value = b.InstagramUrl || '';
+  document.getElementById('brandYoutubeUrl').value = b.YoutubeUrl || '';
+}
+document.getElementById('brandingForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('brandingSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.updateBranding, {
+    siteName: document.getElementById('brandSiteName').value.trim(),
+    tagline: document.getElementById('brandTagline').value.trim(),
+    logoUrl: brandLogoData,
+    faviconUrl: brandFaviconData,
+    primaryColor: document.getElementById('brandPrimaryColor').value.trim(),
+    accentColor: document.getElementById('brandAccentColor').value.trim(),
+    contactEmail: document.getElementById('brandContactEmail').value.trim(),
+    contactPhone: document.getElementById('brandContactPhone').value.trim(),
+    address: document.getElementById('brandAddress').value.trim(),
+    facebookUrl: document.getElementById('brandFacebookUrl').value.trim(),
+    instagramUrl: document.getElementById('brandInstagramUrl').value.trim(),
+    youtubeUrl: document.getElementById('brandYoutubeUrl').value.trim(),
+    ...adminAuthParams()
+  });
+  setBtnLoading(btn, false);
+  if (res.success) toast('Branding updated.', 'success');
   else toast(res.message || 'Save failed.', 'error');
 });
 
@@ -2063,13 +2542,16 @@ async function loadStudentPerformance(studentId) {
     <div class="panel">
       <div class="panel-head"><h3>All Results</h3></div>
       <div class="table-wrap">${d.results.length === 0 ? `<div class="empty-state"><h4>No attempts yet</h4></div>` : `
-        <table><thead><tr><th>Quiz</th><th>Score</th><th>Percentage</th><th>Date</th></tr></thead><tbody>
-          ${d.results.map(r => `<tr><td>${escapeHtml(r.QuizName)}</td><td>${escapeHtml(r.Score)}/${escapeHtml(r.TotalQuestions)}</td><td>${fmtPct(r.Percentage)}</td><td>${escapeHtml(r.Date)}</td></tr>`).join('')}
+        <table><thead><tr><th>Quiz</th><th>Score</th><th>Percentage</th><th>Date</th><th>Action</th></tr></thead><tbody>
+          ${d.results.map(r => `<tr><td>${escapeHtml(r.QuizName)}</td><td>${escapeHtml(r.Score)}/${escapeHtml(r.TotalQuestions)}</td><td>${fmtPct(r.Percentage)}</td><td>${escapeHtml(r.Date)}</td><td><button class="btn btn-ghost btn-sm" data-view-perf-result="${escapeHtml(r.ResultID)}">View Details</button></td></tr>`).join('')}
         </tbody></table>`}
       </div>
     </div>
   `;
   document.getElementById('perfStamp').innerHTML = navyStampSVG(72);
+  document.getElementById('perfCaptureArea').querySelectorAll('[data-view-perf-result]').forEach(btn => {
+    btn.addEventListener('click', () => openReportModal(d.results.find(x => x.ResultID === btn.dataset.viewPerfResult)));
+  });
 }
 
 document.getElementById('perfScreenshotBtn').addEventListener('click', () => {
@@ -2169,40 +2651,94 @@ async function shareImageViaWhatsapp(elementId, filename, caption) {
 }
 
 /* ============================================================================
-   CERTIFICATE SYSTEM
+   CERTIFICATE SYSTEM (Certificates & Achievements)
    ============================================================================ */
 const CERT_TITLES = {
+  QuizTopPerformer: 'CERTIFICATE OF ACHIEVEMENT',
+  OverallTopPerformer: 'CERTIFICATE OF ACHIEVEMENT',
+  ConsistentStudent: 'CERTIFICATE OF RECOGNITION',
+  SubjectExcellence: 'CERTIFICATE OF EXCELLENCE',
+  QuizCompletion: 'CERTIFICATE OF COMPLETION',
+  SpecialAchievement: 'CERTIFICATE OF SPECIAL ACHIEVEMENT',
+  // legacy types kept so certificates issued before this upgrade still render
   Completion: 'CERTIFICATE OF COMPLETION',
   OutstandingPerformance: 'CERTIFICATE OF OUTSTANDING PERFORMANCE',
   MockTest: 'MOCK TEST COMPLETION CERTIFICATE'
 };
+const CERT_TYPE_LABEL = {
+  QuizTopPerformer: 'Quiz Top Performer', OverallTopPerformer: 'Overall Top Performer',
+  ConsistentStudent: 'Consistent Student', SubjectExcellence: 'Subject Excellence',
+  QuizCompletion: 'Quiz Completion', SpecialAchievement: 'Special Achievement',
+  Completion: 'Completion', OutstandingPerformance: 'Outstanding Performance', MockTest: 'Mock Test'
+};
+
+// Original professional red-ink "VERIFIED" stamp — circular, slightly rotated,
+// double ring, star accents, faint ink-texture via SVG turbulence filter so it
+// reads as a real stamp rather than a plain red circle.
+function redVerifiedStampSVG(size = 130) {
+  const id = 'inkTex' + Math.random().toString(36).slice(2, 8);
+  return `
+  <svg width="${size}" height="${size}" viewBox="0 0 200 200" style="transform:rotate(-11deg);">
+    <defs>
+      <filter id="${id}"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="n"/><feColorMatrix in="n" type="matrix" values="0 0 0 0 0.72  0 0 0 0 0.08  0 0 0 0 0.08  0 0 0 0.35 0"/><feComposite operator="in" in2="SourceGraphic"/></filter>
+      <path id="${id}c" d="M100,26 a74,74 0 1,1 -0.1,0" />
+    </defs>
+    <g fill="none" stroke="#B3121B" stroke-width="3" opacity="0.92">
+      <circle cx="100" cy="100" r="88"/>
+      <circle cx="100" cy="100" r="76"/>
+    </g>
+    <g fill="#B3121B" opacity="0.92">
+      ${[0, 60, 120, 180, 240, 300].map(a => `<circle cx="${100 + 82 * Math.cos(a * Math.PI / 180)}" cy="${100 + 82 * Math.sin(a * Math.PI / 180)}" r="2.6"/>`).join('')}
+    </g>
+    <text font-family="Georgia, serif" font-size="21" font-weight="700" fill="#B3121B" opacity="0.92" letter-spacing="2">
+      <textPath href="#${id}c" startOffset="3%">ARY QUIZ BANK • VERIFIED •</textPath>
+    </text>
+    <text x="100" y="94" text-anchor="middle" font-family="Georgia, serif" font-size="26" font-weight="800" fill="#B3121B" opacity="0.94">VERIFIED</text>
+    <text x="100" y="118" text-anchor="middle" font-family="Georgia, serif" font-size="12" font-weight="600" fill="#B3121B" opacity="0.9" letter-spacing="3">ARY QUIZ BANK</text>
+    <circle cx="100" cy="100" r="88" fill="#B3121B" filter="url(#${id})" opacity="0.5"/>
+  </svg>`;
+}
 
 // Builds the certificate artwork as an off-DOM node so it can be captured at
 // high resolution regardless of what's currently on screen. Uses only vector
 // (SVG icons, CSS borders, web-font text) so nothing in it can look blurry.
-function buildCertificateNode(cert) {
+function buildCertificateNode(cert, signatures, qrDataUrl) {
+  signatures = signatures || {};
   const wrap = document.createElement('div');
   wrap.className = 'certificate-sheet';
   wrap.innerHTML = `
     <div class="certificate-border">
-      <div class="certificate-stamp">${navyStampSVG(120)}</div>
+      <div class="certificate-stamp">${redVerifiedStampSVG(110)}</div>
+      <div class="certificate-qr">
+        ${qrDataUrl ? `<img src="${qrDataUrl}" alt="Scan to verify">` : ''}
+        <span>Scan to verify</span>
+      </div>
+      <div class="certificate-photo-frame">
+        <img src="${photoOrDefault(cert.StudentPhoto)}" alt="">
+      </div>
       <div class="certificate-cap">🎓</div>
       <h1 class="certificate-brand">ARY QUIZE BANK</h1>
+      <p class="certificate-slogan">Learn • Practice • Achieve Excellence</p>
       <div class="certificate-rule"></div>
-      <h2 class="certificate-title">${escapeHtml(CERT_TITLES[cert.CertificateType] || 'CERTIFICATE')}</h2>
+      <h2 class="certificate-title">${escapeHtml(cert.CertificateTitle || CERT_TITLES[cert.CertificateType] || 'CERTIFICATE')}</h2>
       <p class="certificate-presented">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
       <div class="certificate-name">${escapeHtml(cert.StudentName)}</div>
       <p class="certificate-body">${escapeHtml(cert.AchievementText)}</p>
-      ${!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuizzes) ? `<p class="certificate-score">${escapeHtml(cert.Score)} OUT OF ${escapeHtml(cert.TotalQuizzes)}</p>` : ''}
+      ${!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuestions) ? `<p class="certificate-score">${escapeHtml(cert.Score)} OUT OF ${escapeHtml(cert.TotalQuestions)}</p>` : ''}
       <div class="certificate-meta-grid">
+        <div><strong>Certificate Type</strong><span>${escapeHtml(CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType)}</span></div>
+        ${cert.QuizName ? `<div><strong>Quiz</strong><span>${escapeHtml(cert.QuizName)}</span></div>` : ''}
+        ${cert.Subject ? `<div><strong>Subject</strong><span>${escapeHtml(cert.Subject)}</span></div>` : ''}
+        ${!isEmptyVal(cert.Rank) ? `<div><strong>Rank</strong><span>#${escapeHtml(cert.Rank)}</span></div>` : ''}
+        ${!isEmptyVal(cert.Percentage) ? `<div><strong>Percentage</strong><span>${escapeHtml(cert.Percentage)}%</span></div>` : ''}
         ${cert.Program ? `<div><strong>Program</strong><span>${escapeHtml(cert.Program)}</span></div>` : ''}
         ${cert.Semester ? `<div><strong>Semester</strong><span>${escapeHtml(cert.Semester)}</span></div>` : ''}
-        ${cert.Shift ? `<div><strong>Shift</strong><span>${escapeHtml(cert.Shift)}</span></div>` : ''}
         ${cert.RollNo ? `<div><strong>Roll No.</strong><span>${escapeHtml(cert.RollNo)}</span></div>` : ''}
       </div>
       <div class="certificate-signatures">
-        <div><span class="sig-script">${escapeHtml(cert.MentorName || 'Mentor')}</span><strong>${escapeHtml(cert.MentorName || '')}</strong><small>Test Preparation Mentor</small></div>
-        <div><span class="sig-script">${escapeHtml(cert.AdminName || 'Admin')}</span><strong>${escapeHtml(cert.AdminName || '')}</strong><small>Admin & Founder</small></div>
+        <div><span class="sig-script">${escapeHtml(cert.FounderName || signatures.FounderName || 'Founder')}</span><strong>${escapeHtml(cert.FounderName || signatures.FounderName || '')}</strong><small>Founder</small></div>
+        <div><span class="sig-script">${escapeHtml(cert.MentorName || 'Mentor')}</span><strong>${escapeHtml(cert.MentorName || '')}</strong><small>Mentor</small></div>
+        <div><span class="sig-script">${escapeHtml(cert.AdminName || 'Admin')}</span><strong>${escapeHtml(cert.AdminName || '')}</strong><small>Admin</small></div>
       </div>
       <p class="certificate-issued">Issued ${escapeHtml(cert.IssuedDate)} · Certificate ID ${escapeHtml(cert.CertificateID)}</p>
     </div>
@@ -2214,8 +2750,17 @@ function buildCertificateNode(cert) {
   return wrap;
 }
 
+async function makeCertQrDataUrl(certId) {
+  try {
+    const verifyUrl = `${location.origin}${location.pathname}?verify=${encodeURIComponent(certId)}`;
+    return await QRCode.toDataURL(verifyUrl, { width: 240, margin: 1, color: { dark: '#14235E', light: '#FFFFFF' } });
+  } catch { return null; }
+}
+
 async function downloadCertificateImage(cert) {
-  const node = buildCertificateNode(cert);
+  const sigRes = await apiCall(API_ACTIONS.getSignatures, {});
+  const qr = await makeCertQrDataUrl(cert.CertificateID);
+  const node = buildCertificateNode(cert, sigRes.data ? sigRes.data.signatures : {}, qr);
   try {
     const canvas = await html2canvas(node.querySelector('.certificate-border'), { backgroundColor: '#ffffff', scale: 3 });
     const link = document.createElement('a');
@@ -2228,7 +2773,9 @@ async function downloadCertificateImage(cert) {
 }
 
 async function downloadCertificatePdf(cert) {
-  const node = buildCertificateNode(cert);
+  const sigRes = await apiCall(API_ACTIONS.getSignatures, {});
+  const qr = await makeCertQrDataUrl(cert.CertificateID);
+  const node = buildCertificateNode(cert, sigRes.data ? sigRes.data.signatures : {}, qr);
   try {
     const canvas = await html2canvas(node.querySelector('.certificate-border'), { backgroundColor: '#ffffff', scale: 3 });
     const imgData = canvas.toDataURL('image/png');
@@ -2292,6 +2839,202 @@ async function loadAdminCertificates() {
   renderCertificateCards(el, res.data.certificates, true);
 }
 
+/* ---------------------------------------------------------------------------
+   EMAIL CENTER
+--------------------------------------------------------------------------- */
+let emailSelectedStudentIds = [];
+
+function currentEmailAudiencePayload() {
+  const type = document.getElementById('emailAudienceType').value;
+  const payload = { audienceType: type, ...adminAuthParams() };
+  if (type === 'one' || type === 'multiple') payload.studentIds = emailSelectedStudentIds;
+  if (type === 'class') payload.className = document.getElementById('emailClassName').value.trim();
+  if (type === 'topPerformers') payload.topN = document.getElementById('emailTopN').value;
+  return payload;
+}
+
+async function updateEmailAudienceCount() {
+  const countEl = document.getElementById('emailAudienceCount');
+  countEl.textContent = 'Checking recipients…';
+  const res = await apiCall(API_ACTIONS.previewEmailAudience, currentEmailAudiencePayload());
+  countEl.textContent = res.success ? `${res.data.count} recipient(s) will receive this email.` : (res.message || 'Could not preview recipients.');
+}
+
+document.getElementById('emailAudienceType').addEventListener('change', (e) => {
+  const type = e.target.value;
+  document.getElementById('emailStudentPickerField').classList.toggle('hidden', type !== 'one' && type !== 'multiple');
+  document.getElementById('emailClassField').classList.toggle('hidden', type !== 'class');
+  document.getElementById('emailTopNField').classList.toggle('hidden', type !== 'topPerformers');
+  updateEmailAudienceCount();
+});
+document.getElementById('emailClassName').addEventListener('change', updateEmailAudienceCount);
+document.getElementById('emailTopN').addEventListener('change', updateEmailAudienceCount);
+
+document.getElementById('emailStudentSearchInput').addEventListener('input', async (e) => {
+  const q = e.target.value.trim().toLowerCase();
+  const resultEl = document.getElementById('emailStudentSearchResult');
+  if (q.length < 2) { resultEl.innerHTML = ''; return; }
+  if (!allStudentsCache || allStudentsCache.length === 0) {
+    const res = await apiCall(API_ACTIONS.getStudents, adminAuthParams());
+    if (res.success) allStudentsCache = res.data.students;
+  }
+  const matches = (allStudentsCache || []).filter(s => `${s.Name} ${s.Email} ${s.StudentID}`.toLowerCase().includes(q)).slice(0, 6);
+  resultEl.innerHTML = matches.map(s => `<div class="search-result-row" data-pick="${escapeHtml(s.StudentID)}">${escapeHtml(s.Name)} — ${escapeHtml(s.Email)}</div>`).join('');
+  resultEl.querySelectorAll('[data-pick]').forEach(row => {
+    row.addEventListener('click', () => {
+      const type = document.getElementById('emailAudienceType').value;
+      if (type === 'one') emailSelectedStudentIds = [row.dataset.pick];
+      else if (!emailSelectedStudentIds.includes(row.dataset.pick)) emailSelectedStudentIds.push(row.dataset.pick);
+      renderEmailSelectedStudents();
+      resultEl.innerHTML = '';
+      document.getElementById('emailStudentSearchInput').value = '';
+      updateEmailAudienceCount();
+    });
+  });
+});
+function renderEmailSelectedStudents() {
+  const el = document.getElementById('emailSelectedStudents');
+  const chosen = (allStudentsCache || []).filter(s => emailSelectedStudentIds.includes(s.StudentID));
+  el.innerHTML = chosen.map(s => `<span class="chip is-active">${escapeHtml(s.Name)} <a href="#" data-remove="${escapeHtml(s.StudentID)}">✕</a></span>`).join('');
+  el.querySelectorAll('[data-remove]').forEach(a => {
+    a.addEventListener('click', (e) => {
+      e.preventDefault();
+      emailSelectedStudentIds = emailSelectedStudentIds.filter(id => id !== a.dataset.remove);
+      renderEmailSelectedStudents();
+      updateEmailAudienceCount();
+    });
+  });
+}
+
+document.getElementById('emailCenterForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('emailCenterSendBtn');
+  const payload = {
+    ...currentEmailAudiencePayload(),
+    subject: document.getElementById('emailCenterSubject').value.trim(),
+    message: document.getElementById('emailCenterMessage').value.trim()
+  };
+  setBtnLoading(btn, true);
+  try {
+    const res = await apiCall(API_ACTIONS.sendBulkEmail, payload);
+    if (res.success) { toast(res.message, 'success'); e.target.reset(); emailSelectedStudentIds = []; renderEmailSelectedStudents(); }
+    else toast(res.message || 'Could not send.', 'error');
+  } finally { setBtnLoading(btn, false); }
+});
+let certActiveTab = 'eligibility';
+let certEligibilityCache = [];
+let certSelectedIds = new Set();
+
+document.querySelectorAll('#certTabRow .chip').forEach(chip => {
+  chip.addEventListener('click', () => {
+    document.querySelectorAll('#certTabRow .chip').forEach(c => c.classList.remove('is-active'));
+    chip.classList.add('is-active');
+    certActiveTab = chip.dataset.certTab;
+    document.getElementById('certEligibilityPane').classList.toggle('hidden', certActiveTab !== 'eligibility' && certActiveTab !== 'approved');
+    document.getElementById('certGeneratedPane').classList.toggle('hidden', certActiveTab !== 'generated');
+    document.getElementById('certSignaturesPane').classList.toggle('hidden', certActiveTab !== 'signatures');
+    document.getElementById('certBulkGenerateBtn').classList.toggle('hidden', certActiveTab !== 'approved');
+    document.getElementById('certBulkApproveBtn').classList.toggle('hidden', certActiveTab !== 'eligibility');
+    document.getElementById('certBulkRejectBtn').classList.toggle('hidden', certActiveTab === 'generated' || certActiveTab === 'signatures');
+    if (certActiveTab === 'eligibility') loadCertEligibility('PendingReview');
+    else if (certActiveTab === 'approved') loadCertEligibility('Approved');
+    else if (certActiveTab === 'generated') loadAdminCertificates();
+    else if (certActiveTab === 'signatures') loadSignatures();
+  });
+});
+
+async function loadCertEligibility(status) {
+  const el = document.getElementById('certEligibilityTable');
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  certSelectedIds = new Set();
+  const res = await apiCall(API_ACTIONS.getCertificateEligibility, { status, ...adminAuthParams() });
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  certEligibilityCache = res.data.eligibility;
+  renderCertEligibilityTable();
+}
+
+function renderCertEligibilityTable() {
+  const el = document.getElementById('certEligibilityTable');
+  const rows = certEligibilityCache;
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>Nothing here</h4><p>Run an eligibility scan to detect candidates.</p></div>`; return; }
+  el.innerHTML = `<table><thead><tr>
+      <th><input type="checkbox" id="certSelectAll"></th>
+      <th>Student</th><th>Certificate Type</th><th>Quiz / Subject</th><th>Rank</th><th>Score / %</th><th>Reason</th>
+    </tr></thead><tbody>
+    ${rows.map(r => `
+      <tr>
+        <td><input type="checkbox" class="cert-row-check" value="${escapeHtml(r.EligibilityID)}"></td>
+        <td><div class="table-name-cell"><img class="avatar-sm" src="${photoOrDefault(r.StudentPhoto)}" alt=""> ${escapeHtml(r.StudentName)}</div></td>
+        <td>${escapeHtml(CERT_TYPE_LABEL[r.CertificateType] || r.CertificateType)}</td>
+        <td>${escapeHtml(r.QuizName || r.Subject || '—')}</td>
+        <td>${isEmptyVal(r.Rank) ? '—' : '#' + escapeHtml(r.Rank)}</td>
+        <td>${!isEmptyVal(r.Score) ? escapeHtml(r.Score) + '/' + escapeHtml(r.TotalQuestions) + ' · ' : ''}${!isEmptyVal(r.Percentage) ? escapeHtml(r.Percentage) + '%' : ''}</td>
+        <td class="section-sub" style="margin:0;max-width:220px;">${escapeHtml(r.EligibilityReason || '')}</td>
+      </tr>`).join('')}
+  </tbody></table>`;
+
+  document.getElementById('certSelectAll').addEventListener('change', (e) => {
+    document.querySelectorAll('.cert-row-check').forEach(cb => { cb.checked = e.target.checked; toggleCertSelected(cb.value, e.target.checked); });
+  });
+  document.querySelectorAll('.cert-row-check').forEach(cb => {
+    cb.addEventListener('change', () => toggleCertSelected(cb.value, cb.checked));
+  });
+}
+function toggleCertSelected(id, checked) { if (checked) certSelectedIds.add(id); else certSelectedIds.delete(id); }
+
+document.getElementById('runEligibilityScanBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('runEligibilityScanBtn');
+  setBtnLoading(btn, true);
+  try {
+    const res = await apiCall(API_ACTIONS.runEligibilityScan, adminAuthParams());
+    if (res.success) { toast(res.message, 'success'); loadCertEligibility(certActiveTab === 'approved' ? 'Approved' : 'PendingReview'); }
+    else toast(res.message || 'Scan failed.', 'error');
+  } finally { setBtnLoading(btn, false); }
+});
+
+document.getElementById('certBulkApproveBtn').addEventListener('click', async () => {
+  if (certSelectedIds.size === 0) { toast('Select at least one candidate.', 'warning'); return; }
+  const res = await apiCall(API_ACTIONS.approveEligibility, { eligibilityIds: [...certSelectedIds], ...adminAuthParams() });
+  if (res.success) { toast(res.message, 'success'); loadCertEligibility('PendingReview'); } else toast(res.message || 'Could not approve.', 'error');
+});
+document.getElementById('certBulkRejectBtn').addEventListener('click', async () => {
+  if (certSelectedIds.size === 0) { toast('Select at least one candidate.', 'warning'); return; }
+  const ok = await confirmModal('Reject selected candidate(s)?', 'They will not receive a certificate for this.');
+  if (!ok) return;
+  const res = await apiCall(API_ACTIONS.rejectEligibility, { eligibilityIds: [...certSelectedIds], ...adminAuthParams() });
+  if (res.success) { toast(res.message, 'success'); loadCertEligibility(certActiveTab === 'approved' ? 'Approved' : 'PendingReview'); } else toast(res.message || 'Could not reject.', 'error');
+});
+document.getElementById('certBulkGenerateBtn').addEventListener('click', async () => {
+  if (certSelectedIds.size === 0) { toast('Select at least one approved candidate.', 'warning'); return; }
+  const ok = await confirmModal('Generate certificates for selected candidate(s)?', 'Each will get a unique Certificate ID and become downloadable.');
+  if (!ok) return;
+  const btn = document.getElementById('certBulkGenerateBtn');
+  setBtnLoading(btn, true);
+  try {
+    const res = await apiCall(API_ACTIONS.generateCertificatesFromEligibility, { eligibilityIds: [...certSelectedIds], ...adminAuthParams() });
+    if (res.success) { toast(res.message, 'success'); loadCertEligibility('Approved'); } else toast(res.message || 'Could not generate.', 'error');
+  } finally { setBtnLoading(btn, false); }
+});
+
+async function loadSignatures() {
+  const res = await apiCall(API_ACTIONS.getSignatures, {});
+  const sig = (res.data && res.data.signatures) || {};
+  document.getElementById('sigFounderName').value = sig.FounderName || '';
+  document.getElementById('sigMentorName').value = sig.MentorName || '';
+}
+document.getElementById('signaturesForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const founderFile = document.getElementById('sigFounderFile').files[0];
+  const mentorFile = document.getElementById('sigMentorFile').files[0];
+  const adminFile = document.getElementById('sigAdminFile').files[0];
+  const payload = { founderName: document.getElementById('sigFounderName').value.trim(), mentorName: document.getElementById('sigMentorName').value.trim(), ...adminAuthParams() };
+  if (founderFile) payload.founderSignature = await resizeImageFile(founderFile, 260, 0.85);
+  if (mentorFile) payload.mentorSignature = await resizeImageFile(mentorFile, 260, 0.85);
+  if (adminFile) payload.adminSignature = await resizeImageFile(adminFile, 260, 0.85);
+  const res = await apiCall(API_ACTIONS.saveSignatures, payload);
+  if (res.success) toast(res.message, 'success'); else toast(res.message || 'Could not save.', 'error');
+});
+
 document.getElementById('newCertificateBtn').addEventListener('click', async () => {
   document.getElementById('certificateForm').reset();
   document.getElementById('certStudentSearchResult').innerHTML = '';
@@ -2350,8 +3093,44 @@ document.getElementById('certificateForm').addEventListener('submit', async (e) 
 /* ============================================================================
    INIT — restore session on load
    ============================================================================ */
+async function renderVerifyPage(certificateId) {
+  const card = document.getElementById('verifyCard');
+  card.innerHTML = `<div class="empty-state">Checking certificate…</div>`;
+  const res = await apiCall(API_ACTIONS.verifyCertificate, { certificateId });
+  if (!res.success) {
+    card.innerHTML = `
+      <div class="empty-state">
+        <h4>✗ Certificate Not Found or Invalid</h4>
+        <p>${escapeHtml(res.message || '')}</p>
+      </div>`;
+    return;
+  }
+  const c = res.data.certificate;
+  card.innerHTML = `
+    <div style="text-align:center;">
+      <img class="avatar-lg" src="${photoOrDefault(c.StudentPhoto)}" alt="" style="margin-bottom:10px;">
+      <h2 style="color:var(--color-success);margin-bottom:2px;">✓ VERIFIED – ARY QUIZ BANK</h2>
+      <p class="section-sub">This certificate is authentic.</p>
+    </div>
+    <div class="report-doc-meta" style="margin-top:18px;">
+      <div><span>Student</span>${escapeHtml(c.StudentName)}</div>
+      <div><span>Certificate Type</span>${escapeHtml(CERT_TYPE_LABEL[c.CertificateType] || c.CertificateType)}</div>
+      ${c.QuizName ? `<div><span>Quiz</span>${escapeHtml(c.QuizName)}</div>` : ''}
+      ${c.Subject ? `<div><span>Subject</span>${escapeHtml(c.Subject)}</div>` : ''}
+      <div><span>Issue Date</span>${escapeHtml(c.IssuedDate)}</div>
+      <div><span>Certificate ID</span>${escapeHtml(c.CertificateID)}</div>
+      <div><span>Status</span>${escapeHtml(c.Status)}</div>
+    </div>
+    <p class="section-sub" style="margin-top:14px;">${escapeHtml(c.AchievementText || '')}</p>
+  `;
+}
+
 (function init() {
   document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
+
+  const verifyId = new URLSearchParams(location.search).get('verify');
+  if (verifyId) { navigate('verify'); renderVerifyPage(verifyId); return; }
+
   const student = Session.getStudent();
   const admin = Session.getAdmin();
   if (student) {

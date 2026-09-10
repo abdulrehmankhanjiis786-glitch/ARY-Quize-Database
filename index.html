@@ -181,9 +181,9 @@
       <div class="avatar-upload">
         <img id="regPhotoPreview" class="avatar-preview" src="" alt="Profile preview">
         <div>
-          <label class="btn btn-outline btn-sm" for="regPhotoInput">Upload photo</label>
-          <input type="file" id="regPhotoInput" accept="image/*" class="hidden">
-          <p class="field-hint">Optional. JPG or PNG, kept small.</p>
+          <label class="btn btn-outline btn-sm" for="regPhotoInput">Upload photo *</label>
+          <input type="file" id="regPhotoInput" accept="image/*" class="hidden" required>
+          <p class="field-hint">Required. JPG or PNG, kept small.</p>
         </div>
       </div>
 
@@ -287,6 +287,13 @@
 
       <!-- Student Dashboard -->
       <section id="studentSectionDashboard" class="content-section">
+        <div id="missingPhotoBanner" class="alert-banner alert-banner-warning hidden">
+          <div class="alert-banner-text">
+            <strong>Complete Your Profile</strong>
+            <p>Please upload your profile picture to complete your student profile.</p>
+          </div>
+          <button class="btn btn-primary btn-sm" id="missingPhotoBtn">Upload Profile Picture</button>
+        </div>
         <div class="welcome-banner">
           <img id="dashPhoto" class="avatar-lg" src="" alt="">
           <div>
@@ -454,19 +461,46 @@
       </div>
     </div>
     <nav class="sidebar-nav" id="adminNav">
-      <a href="#" data-nav="admin-dashboard" data-perm="dashboard">Dashboard</a>
-      <a href="#" data-nav="admin-students" data-perm="students">Students</a>
-      <a href="#" data-nav="admin-quizzes" data-perm="quizzes">Quizzes</a>
-      <a href="#" data-nav="admin-review" data-perm="review">Quiz Review</a>
-      <a href="#" data-nav="admin-results" data-perm="results">Results</a>
-      <a href="#" data-nav="admin-leaderboard" data-perm="results">Leaderboard</a>
-      <a href="#" data-nav="admin-analytics" data-perm="analytics">Analytics</a>
-      <a href="#" data-nav="admin-announcements" data-perm="announcements">Announcements</a>
-      <a href="#" data-nav="admin-notifications" data-perm="announcements">Notifications</a>
-      <a href="#" data-nav="admin-certificates" data-perm="students">Certificates</a>
-      <a href="#" data-nav="admin-contacts" data-perm="contacts">Contacts</a>
-      <a href="#" data-nav="admin-management" data-perm="admins">Admin Management</a>
-      <a href="#" data-nav="admin-profile" data-perm="profile">My Profile</a>
+      <div class="sidebar-nav-group">
+        <a href="#" data-nav="admin-dashboard" data-perm="dashboard">Dashboard</a>
+      </div>
+
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-label">Academics</div>
+        <a href="#" data-nav="admin-students" data-perm="students">Students</a>
+        <a href="#" data-nav="admin-quizzes" data-perm="quizzes">Quizzes</a>
+        <a href="#" data-nav="admin-review" data-perm="review">Quiz Review</a>
+        <a href="#" data-nav="admin-results" data-perm="results">Results</a>
+        <a href="#" data-nav="admin-leaderboard" data-perm="results">Leaderboard</a>
+        <a href="#" data-nav="admin-analytics" data-perm="analytics">Analytics</a>
+      </div>
+
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-label">Communication</div>
+        <a href="#" data-nav="admin-announcements" data-perm="announcements">Announcements</a>
+        <a href="#" data-nav="admin-notifications" data-perm="announcements">Notifications</a>
+        <a href="#" data-nav="admin-email" data-perm="students">Email Center</a>
+        <a href="#" data-nav="admin-contacts" data-perm="contacts">Contacts</a>
+      </div>
+
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-label">Certificates</div>
+        <a href="#" data-nav="admin-certificates" data-perm="students">Certificates</a>
+      </div>
+
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-label">Site Content</div>
+        <a href="#" data-nav="admin-gallery" data-perm="content">Gallery</a>
+        <a href="#" data-nav="admin-advertisements" data-perm="content">Advertisements</a>
+        <a href="#" data-nav="admin-faqs" data-perm="content">FAQs</a>
+        <a href="#" data-nav="admin-branding" data-perm="content">Branding</a>
+      </div>
+
+      <div class="sidebar-nav-group">
+        <div class="sidebar-nav-label">Administration</div>
+        <a href="#" data-nav="admin-management" data-perm="admins">Admin Management</a>
+        <a href="#" data-nav="admin-profile" data-perm="profile">My Profile</a>
+      </div>
     </nav>
     <button id="adminLogoutBtn" class="sidebar-logout">Log out</button>
   </aside>
@@ -509,6 +543,7 @@
           <button class="chip" data-filter="Approved">Approved</button>
           <button class="chip" data-filter="Rejected">Rejected</button>
           <button class="chip" data-filter="Deactivated">Deactivated</button>
+          <button class="chip" data-filter="MissingPhoto">Missing Profile Picture</button>
         </div>
         <div id="adminStudentsTable" class="table-wrap"></div>
       </section>
@@ -597,14 +632,97 @@
         <div id="adminNotificationsTable" class="table-wrap"></div>
       </section>
 
-      <!-- Certificates -->
+      <!-- Certificates & Achievements -->
       <section id="adminSectionCertificates" class="content-section hidden">
         <div class="section-head-row">
-          <h2>Certificates</h2>
-          <button class="btn btn-primary btn-sm" id="newCertificateBtn">Issue Certificate</button>
+          <h2>Certificates &amp; Achievements</h2>
+          <div class="field-row" style="grid-template-columns:auto auto;gap:8px;">
+            <button class="btn btn-outline btn-sm" id="runEligibilityScanBtn">Run Eligibility Scan</button>
+            <button class="btn btn-primary btn-sm" id="newCertificateBtn">Issue Manual Certificate</button>
+          </div>
         </div>
-        <p class="section-sub">Mock test / course completion certificates — navy &amp; gold template with an official ARY Quize Bank seal.</p>
-        <div id="adminCertificatesGrid" class="quiz-grid"></div>
+        <p class="section-sub">Eligibility is detected automatically. A certificate is only ever generated after an Admin approves the candidate.</p>
+
+        <div class="filter-row" id="certTabRow">
+          <button class="chip is-active" data-cert-tab="eligibility">Eligibility (Pending Review)</button>
+          <button class="chip" data-cert-tab="approved">Approved Candidates</button>
+          <button class="chip" data-cert-tab="generated">Generated Certificates</button>
+          <button class="chip" data-cert-tab="signatures">Signatures</button>
+        </div>
+
+        <!-- Eligibility / Approved candidates table (shared renderer, filtered by status) -->
+        <div id="certEligibilityPane">
+          <div class="section-head-row">
+            <div class="field-row" style="grid-template-columns:auto auto;gap:8px;">
+              <button class="btn btn-outline btn-sm" id="certBulkApproveBtn">Approve Selected</button>
+              <button class="btn btn-outline btn-sm" id="certBulkRejectBtn">Reject Selected</button>
+              <button class="btn btn-primary btn-sm hidden" id="certBulkGenerateBtn">Generate Certificates for Selected</button>
+            </div>
+          </div>
+          <div id="certEligibilityTable" class="table-wrap"></div>
+        </div>
+
+        <!-- Generated certificates (existing grid + issue-manually flow) -->
+        <div id="certGeneratedPane" class="hidden">
+          <div id="adminCertificatesGrid" class="quiz-grid"></div>
+        </div>
+
+        <!-- Signatures management -->
+        <div id="certSignaturesPane" class="hidden">
+          <form id="signaturesForm" class="panel" style="max-width:520px;">
+            <label class="field"><span>Founder Name</span><input type="text" id="sigFounderName"></label>
+            <label class="field"><span>Founder Signature</span><input type="file" id="sigFounderFile" accept="image/*"></label>
+            <label class="field"><span>Mentor Name</span><input type="text" id="sigMentorName"></label>
+            <label class="field"><span>Mentor Signature</span><input type="file" id="sigMentorFile" accept="image/*"></label>
+            <label class="field"><span>Admin Signature</span><input type="file" id="sigAdminFile" accept="image/*"></label>
+            <p class="field-hint">These names/signatures automatically appear on every generated certificate.</p>
+            <button type="submit" class="btn btn-primary">Save Signatures</button>
+          </form>
+        </div>
+      </section>
+
+      <!-- Email Center -->
+      <section id="adminSectionEmail" class="content-section hidden">
+        <h2>Email Center</h2>
+        <p class="section-sub">Send a personalized email to one student, a group, or the whole student body. {name} in your message is replaced with each recipient's name.</p>
+        <form id="emailCenterForm" class="panel" style="max-width:640px;">
+          <label class="field">
+            <span>Send To</span>
+            <select id="emailAudienceType">
+              <option value="one">One Student</option>
+              <option value="multiple">Multiple Students</option>
+              <option value="all">All Students</option>
+              <option value="class">Students from a Class</option>
+              <option value="topPerformers">Top Performers</option>
+              <option value="eligibleCandidates">Eligible Certificate Candidates</option>
+              <option value="approvedCandidates">Approved Certificate Candidates</option>
+            </select>
+          </label>
+          <label class="field hidden" id="emailStudentPickerField">
+            <span>Student(s)</span>
+            <input type="text" id="emailStudentSearchInput" placeholder="Search by name, email, or ID">
+            <div id="emailStudentSearchResult"></div>
+            <div id="emailSelectedStudents" class="chip-row"></div>
+          </label>
+          <label class="field hidden" id="emailClassField">
+            <span>Class</span>
+            <input type="text" id="emailClassName" placeholder="e.g. BSN 3rd semester">
+          </label>
+          <label class="field hidden" id="emailTopNField">
+            <span>Top N students</span>
+            <input type="number" id="emailTopN" value="10" min="1">
+          </label>
+          <p class="field-hint" id="emailAudienceCount">—</p>
+          <label class="field">
+            <span>Subject</span>
+            <input type="text" id="emailCenterSubject" required>
+          </label>
+          <label class="field">
+            <span>Message</span>
+            <textarea id="emailCenterMessage" rows="6" required placeholder="Hi {name}, ..."></textarea>
+          </label>
+          <button type="submit" class="btn btn-primary" id="emailCenterSendBtn">Send Email</button>
+        </form>
       </section>
 
       <!-- Student Performance (opened from the Students table) -->
@@ -643,6 +761,115 @@
         </div>
         <p class="section-sub">These cards are shown on the public Contact page and to logged-in students.</p>
         <div id="adminContactsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Gallery -->
+      <section id="adminSectionGallery" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Gallery</h2>
+          <button class="btn btn-primary btn-sm" id="newGalleryBtn">Add Photo</button>
+        </div>
+        <p class="section-sub">Photos shown on the public site gallery.</p>
+        <div id="adminGalleryTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Advertisements -->
+      <section id="adminSectionAdvertisements" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Advertisements</h2>
+          <button class="btn btn-primary btn-sm" id="newAdvertisementBtn">Add Advertisement</button>
+        </div>
+        <p class="section-sub">Promotional banners shown on the public site, optionally scheduled between a start and end date.</p>
+        <div id="adminAdvertisementsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- FAQs -->
+      <section id="adminSectionFaqs" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>FAQs</h2>
+          <button class="btn btn-primary btn-sm" id="newFaqBtn">Add FAQ</button>
+        </div>
+        <p class="section-sub">Frequently asked questions shown on the public site.</p>
+        <div id="adminFaqsTable" class="table-wrap"></div>
+      </section>
+
+      <!-- Branding -->
+      <section id="adminSectionBranding" class="content-section hidden">
+        <div class="section-head-row">
+          <h2>Branding</h2>
+        </div>
+        <p class="section-sub">Site name, logo, contact details and social links used across the public site.</p>
+        <div class="panel">
+          <form id="brandingForm">
+            <div class="content-grid-2">
+              <label class="field">
+                <span>Site Name</span>
+                <input type="text" id="brandSiteName" placeholder="ARY Quize Bank">
+              </label>
+              <label class="field">
+                <span>Tagline</span>
+                <input type="text" id="brandTagline" placeholder="e.g. Learn. Test. Excel.">
+              </label>
+            </div>
+            <label class="field">
+              <span>Logo</span>
+              <div class="image-upload">
+                <img id="brandLogoPreview" class="image-upload-preview" src="" alt="Logo preview">
+                <label class="btn btn-outline btn-sm" for="brandLogoInput">Upload logo</label>
+                <input type="file" id="brandLogoInput" accept="image/*" class="hidden">
+              </div>
+            </label>
+            <label class="field">
+              <span>Favicon</span>
+              <div class="image-upload">
+                <img id="brandFaviconPreview" class="image-upload-preview" src="" alt="Favicon preview" style="width:56px;height:56px;">
+                <label class="btn btn-outline btn-sm" for="brandFaviconInput">Upload favicon</label>
+                <input type="file" id="brandFaviconInput" accept="image/*" class="hidden">
+              </div>
+            </label>
+            <div class="content-grid-2">
+              <label class="field">
+                <span>Primary Color</span>
+                <input type="text" id="brandPrimaryColor" placeholder="#1E3A8A">
+              </label>
+              <label class="field">
+                <span>Accent Color</span>
+                <input type="text" id="brandAccentColor" placeholder="#C9A227">
+              </label>
+            </div>
+            <div class="content-grid-2">
+              <label class="field">
+                <span>Contact Email</span>
+                <input type="email" id="brandContactEmail">
+              </label>
+              <label class="field">
+                <span>Contact Phone</span>
+                <input type="tel" id="brandContactPhone">
+              </label>
+            </div>
+            <label class="field">
+              <span>Address</span>
+              <textarea id="brandAddress" rows="2"></textarea>
+            </label>
+            <div class="content-grid-2">
+              <label class="field">
+                <span>Facebook URL</span>
+                <input type="url" id="brandFacebookUrl">
+              </label>
+              <label class="field">
+                <span>Instagram URL</span>
+                <input type="url" id="brandInstagramUrl">
+              </label>
+            </div>
+            <label class="field">
+              <span>YouTube URL</span>
+              <input type="url" id="brandYoutubeUrl">
+            </label>
+            <div class="modal-actions">
+              <button type="submit" class="btn btn-primary" id="brandingSaveBtn">Save Branding</button>
+            </div>
+          </form>
+        </div>
       </section>
 
       <!-- Admin Management -->
@@ -730,6 +957,10 @@
     <h3>Quiz Settings — <span id="quizSettingsName"></span></h3>
     <form id="quizSettingsForm">
       <label class="field">
+        <span>Subject</span>
+        <input type="text" id="quizSubject" placeholder="e.g. Pharmacology">
+      </label>
+      <label class="field">
         <span>Duration (minutes)</span>
         <input type="number" id="quizDuration" min="1" required>
       </label>
@@ -804,6 +1035,41 @@
 </div>
 
 <!-- ============================================================ -->
+<!-- DETAILED PERFORMANCE REPORT MODAL -->
+<!-- ============================================================ -->
+<div id="reportModal" class="modal-backdrop hidden">
+  <div class="modal modal-wide">
+    <div id="reportCaptureArea" class="report-doc">
+      <div class="report-doc-head">
+        <div class="report-doc-brand">
+          <span class="brand-mark">AQ</span>
+          <span>ARY Quize Bank — Performance Report</span>
+        </div>
+        <img id="reportStudentPhoto" class="avatar-sm" src="" alt="">
+      </div>
+      <div class="report-doc-meta" id="reportMetaGrid"></div>
+      <div class="report-doc-stats" id="reportStatGrid"></div>
+      <h4 class="report-doc-subhead">Question-wise Review</h4>
+      <div id="reportQuestionList" class="report-question-list"></div>
+    </div>
+    <div class="modal-actions">
+      <button class="btn btn-outline" id="reportPrintBtn">Print</button>
+      <button class="btn btn-outline" id="reportDownloadBtn">Download Report</button>
+      <button class="btn btn-primary" id="reportCloseBtn">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================ -->
+<!-- PUBLIC CERTIFICATE VERIFICATION PAGE (no login required) -->
+<!-- ============================================================ -->
+<main id="section-verify" class="app-section public-section hidden">
+  <div class="auth-card auth-card-wide" id="verifyCard" style="margin:60px auto;">
+    <div class="empty-state">Checking certificate…</div>
+  </div>
+</main>
+
+<!-- ============================================================ -->
 <!-- CONTACT EDITOR MODAL -->
 <!-- ============================================================ -->
 <div id="contactModal" class="modal-backdrop hidden">
@@ -846,6 +1112,139 @@
   </div>
 </div>
 
+<!-- Gallery item modal -->
+<div id="galleryModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="galleryModalTitle">New Photo</h3>
+    <form id="galleryForm">
+      <input type="hidden" id="galleryId">
+      <label class="field">
+        <span>Photo</span>
+        <div class="image-upload">
+          <img id="galleryPhotoPreview" class="image-upload-preview" src="" alt="">
+          <label class="btn btn-outline btn-sm" for="galleryPhotoInput">Upload image</label>
+          <input type="file" id="galleryPhotoInput" accept="image/*" class="hidden">
+        </div>
+      </label>
+      <label class="field">
+        <span>Title</span>
+        <input type="text" id="galleryTitle" required>
+      </label>
+      <label class="field">
+        <span>Category</span>
+        <input type="text" id="galleryCategory" placeholder="e.g. Events, Campus, Workshops">
+      </label>
+      <label class="field">
+        <span>Caption</span>
+        <textarea id="galleryCaption" rows="2"></textarea>
+      </label>
+      <label class="field">
+        <span>Sort Order</span>
+        <input type="number" id="gallerySortOrder" value="0">
+      </label>
+      <label class="field">
+        <span>Status</span>
+        <select id="galleryStatus">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="galleryCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="gallerySaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Advertisement modal -->
+<div id="advertisementModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="advertisementModalTitle">New Advertisement</h3>
+    <form id="advertisementForm">
+      <input type="hidden" id="advertisementId">
+      <label class="field">
+        <span>Banner Image</span>
+        <div class="image-upload">
+          <img id="advertisementPhotoPreview" class="image-upload-preview" src="" alt="">
+          <label class="btn btn-outline btn-sm" for="advertisementPhotoInput">Upload image</label>
+          <input type="file" id="advertisementPhotoInput" accept="image/*" class="hidden">
+        </div>
+      </label>
+      <label class="field">
+        <span>Title</span>
+        <input type="text" id="advertisementTitle" required>
+      </label>
+      <label class="field">
+        <span>Link URL <span class="field-hint">(optional)</span></span>
+        <input type="url" id="advertisementLinkUrl" placeholder="https://...">
+      </label>
+      <div class="content-grid-2">
+        <label class="field">
+          <span>Start Date <span class="field-hint">(optional)</span></span>
+          <input type="date" id="advertisementStartDate">
+        </label>
+        <label class="field">
+          <span>End Date <span class="field-hint">(optional)</span></span>
+          <input type="date" id="advertisementEndDate">
+        </label>
+      </div>
+      <label class="field">
+        <span>Sort Order</span>
+        <input type="number" id="advertisementSortOrder" value="0">
+      </label>
+      <label class="field">
+        <span>Status</span>
+        <select id="advertisementStatus">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="advertisementCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="advertisementSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- FAQ modal -->
+<div id="faqModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3 id="faqModalTitle">New FAQ</h3>
+    <form id="faqForm">
+      <input type="hidden" id="faqId">
+      <label class="field">
+        <span>Question</span>
+        <input type="text" id="faqQuestion" required>
+      </label>
+      <label class="field">
+        <span>Answer</span>
+        <textarea id="faqAnswer" rows="4" required></textarea>
+      </label>
+      <label class="field">
+        <span>Category</span>
+        <input type="text" id="faqCategory" placeholder="e.g. Registration, Quizzes, Certificates">
+      </label>
+      <label class="field">
+        <span>Sort Order</span>
+        <input type="number" id="faqSortOrder" value="0">
+      </label>
+      <label class="field">
+        <span>Status</span>
+        <select id="faqStatus">
+          <option value="Active">Active</option>
+          <option value="Inactive">Inactive</option>
+        </select>
+      </label>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="faqCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="faqSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
 <!-- ============================================================ -->
 <!-- ADMIN EDITOR MODAL (create + permissions) -->
 <!-- ============================================================ -->
@@ -883,6 +1282,7 @@
           <label class="field-inline"><input type="checkbox" value="analytics" class="perm-check"><span>Analytics Access</span></label>
           <label class="field-inline"><input type="checkbox" value="announcements" class="perm-check"><span>Announcement Management</span></label>
           <label class="field-inline"><input type="checkbox" value="contacts" class="perm-check"><span>Contact Management</span></label>
+          <label class="field-inline"><input type="checkbox" value="content" class="perm-check"><span>Site Content (Gallery, Ads, FAQs, Branding)</span></label>
           <label class="field-inline"><input type="checkbox" value="admins" class="perm-check"><span>Admin Management</span></label>
         </div>
         <p class="field-hint">Ignored for Super Admins, who always have full access.</p>
@@ -1043,13 +1443,18 @@
 <script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
 
+<!-- QR code generation (for certificate verification) -->
+<script src="https://cdn.jsdelivr.net/npm/qrcode@1.5.3/build/qrcode.min.js"></script>
+
 <!-- Firebase (Realtime Database) -->
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
 <script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-database-compat.js"></script>
 <script src="firebase-init.js"></script>
 <script src="firebase-backend.js"></script>
 <script src="firebase-backend-2.js"></script>
+<script src="firebase-certificates.js"></script>
 <script src="firebase-email.js"></script>
+<script src="firebase-content.js"></script>
 
 <script src="script.js"></script>
 </body>

@@ -76,6 +76,7 @@ var STUDENT_STATUS = { PENDING: 'Pending', APPROVED: 'Approved', REJECTED: 'Reje
 async function fbRegisterStudent(p) {
   var missing = validateRequired(p, ['name', 'email', 'password']);
   if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  if (isEmpty(p.photo)) return jsonResponse(false, 'Profile Picture Required – Please upload your profile picture to complete your registration.');
 
   const existing = await fbGetAll('students');
   const dup = existing.some(function (s) { return String(s.Email).toLowerCase() === String(p.email).toLowerCase(); });
@@ -238,27 +239,37 @@ async function fbSubmitQuiz(p) {
   const answerMap = {};
   answers.forEach(function (a) { answerMap[a.questionIndex] = String(a.selected || '').trim().toUpperCase(); });
 
-  let correctCount = 0, wrongCount = 0;
-  rawQuestions.forEach(function (q, idx) {
+  let correctCount = 0, wrongCount = 0, skippedCount = 0;
+  const answerDetails = rawQuestions.map(function (q, idx) {
     const given = answerMap.hasOwnProperty(idx) ? answerMap[idx] : '';
     const correct = String(q.CorrectAnswer).trim().toUpperCase();
-    if (given && given === correct) correctCount++; else wrongCount++;
+    let status;
+    if (!given) { status = 'Skipped'; skippedCount++; }
+    else if (given === correct) { status = 'Correct'; correctCount++; }
+    else { status = 'Incorrect'; wrongCount++; }
+    return {
+      questionIndex: idx, question: q.Question, optionA: q.OptionA, optionB: q.OptionB, optionC: q.OptionC, optionD: q.OptionD,
+      correctAnswer: correct, selected: given, status: status
+    };
   });
 
   const total = rawQuestions.length;
   const percentage = total > 0 ? Math.round((correctCount / total) * 10000) / 100 : 0;
 
   const studentSnap = await db.ref('students/' + p.studentId).once('value');
-  const studentName = studentSnap.exists() ? studentSnap.val().Name : (p.studentName || 'Unknown');
+  const studentRecord = studentSnap.exists() ? studentSnap.val() : null;
+  const studentName = studentRecord ? studentRecord.Name : (p.studentName || 'Unknown');
 
   const resultId = fbGenerateId('RES');
   const now = new Date();
   await db.ref('results/' + resultId).set({
-    ResultID: resultId, StudentID: p.studentId, StudentName: studentName, QuizName: p.quizName,
+    ResultID: resultId, StudentID: p.studentId, StudentName: studentName, StudentPhoto: studentRecord ? (studentRecord.Photo || '') : '',
+    QuizName: p.quizName, Subject: settings.Subject || '',
     Score: correctCount, TotalQuestions: total, Percentage: percentage,
-    CorrectAnswers: correctCount, WrongAnswers: wrongCount,
+    CorrectAnswers: correctCount, WrongAnswers: wrongCount, SkippedAnswers: skippedCount,
     Date: fbFormatDate(now), Time: fbFormatTime(now),
-    TimeTakenSeconds: isEmpty(p.timeTakenSeconds) ? '' : Number(p.timeTakenSeconds)
+    TimeTakenSeconds: isEmpty(p.timeTakenSeconds) ? '' : Number(p.timeTakenSeconds),
+    AnswerDetails: answerDetails
   });
 
   return jsonResponse(true, 'Quiz submitted successfully.', {

@@ -59,7 +59,75 @@ async function fbSendReportEmail(p) {
   });
 }
 
+/* ---------------------------------------------------------------------------
+   EMAIL CENTER — resolve an audience selector into {email,name} recipients,
+   then relay through the same Apps Script mail service.
+   Audience types: 'one' | 'multiple' | 'all' | 'class' | 'topPerformers' |
+                   'eligibleCandidates' | 'approvedCandidates'
+--------------------------------------------------------------------------- */
+async function fbResolveEmailAudience(p) {
+  const students = await fbGetAll('students');
+  const byId = {}; students.forEach(function (s) { byId[s.StudentID] = s; });
+
+  switch (p.audienceType) {
+    case 'one':
+    case 'multiple': {
+      const ids = Array.isArray(p.studentIds) ? p.studentIds : [p.studentIds];
+      return ids.map(function (id) { return byId[id]; }).filter(Boolean).map(function (s) { return { email: s.Email, name: s.Name }; });
+    }
+    case 'all':
+      return students.map(function (s) { return { email: s.Email, name: s.Name }; });
+    case 'class':
+      if (isEmpty(p.className)) return [];
+      return students.filter(function (s) { return String(s.Class).toLowerCase() === String(p.className).toLowerCase(); })
+        .map(function (s) { return { email: s.Email, name: s.Name }; });
+    case 'topPerformers': {
+      const results = await fbGetAll('results');
+      const byStudent = {};
+      results.forEach(function (r) { (byStudent[r.StudentID] = byStudent[r.StudentID] || []).push(r); });
+      const ranked = Object.keys(byStudent).map(function (sid) {
+        const rows = byStudent[sid];
+        const avg = rows.reduce(function (sum, r) { return sum + Number(r.Percentage); }, 0) / rows.length;
+        return { sid: sid, avg: avg };
+      }).sort(function (a, b) { return b.avg - a.avg; }).slice(0, Number(p.topN) || 10);
+      return ranked.map(function (x) { return byId[x.sid]; }).filter(Boolean).map(function (s) { return { email: s.Email, name: s.Name }; });
+    }
+    case 'eligibleCandidates':
+    case 'approvedCandidates': {
+      const status = p.audienceType === 'eligibleCandidates' ? 'PendingReview' : 'Approved';
+      const elig = (await fbGetAll('certificateEligibility')).filter(function (r) { return r.Status === status; });
+      const seen = new Set(); const out = [];
+      elig.forEach(function (r) {
+        if (seen.has(r.StudentID)) return; seen.add(r.StudentID);
+        const s = byId[r.StudentID]; if (s) out.push({ email: s.Email, name: s.Name });
+      });
+      return out;
+    }
+    default:
+      return [];
+  }
+}
+
+async function fbSendBulkEmail(p) {
+  const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['audienceType', 'subject', 'message']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+
+  const recipients = await fbResolveEmailAudience(p);
+  if (recipients.length === 0) return jsonResponse(false, 'No matching recipients found for that audience.');
+
+  return fbRelayCall('sendBulkEmail', { recipients: recipients, subject: p.subject, message: p.message });
+}
+
+async function fbPreviewEmailAudience(p) {
+  const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
+  const recipients = await fbResolveEmailAudience(p);
+  return jsonResponse(true, 'OK', { count: recipients.length, recipients: recipients });
+}
+
 Object.assign(FIREBASE_ACTIONS, {
   sendResultEmail: fbSendResultEmail,
-  sendReportEmail: fbSendReportEmail
+  sendReportEmail: fbSendReportEmail,
+  sendBulkEmail: fbSendBulkEmail,
+  previewEmailAudience: fbPreviewEmailAudience
 });
