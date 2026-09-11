@@ -13,7 +13,7 @@
    Change both to your own secret string before going live (the placeholder
    is not secure long-term, just enough to stop random abuse of the /exec URL).
    ============================================================================ */
-const EMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbwUyx6Cka3OOdUlM8d1fIAG-Y5yrAREbnmdMVu51p57ceEdLQavqApagQjTIzt9s0wZ/exec";
+const EMAIL_RELAY_URL = "https://script.google.com/macros/s/AKfycbxhtL4ewLDCH-aTWlyuXu_BgBGR6XR-HH55o5Zf-thDW6s965lIbAsjUITppQui_lqA/exec";
 const RELAY_KEY = 'ARY-QB-2026-CHANGE-ME';
 
 async function fbRelayCall(action, params) {
