@@ -250,14 +250,15 @@ const Session = {
 /* ============================================================================
    ROUTER
    ============================================================================ */
-const PUBLIC_SECTIONS = ['home', 'contact', 'student-login', 'student-register', 'admin-login', 'verify'];
-const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-leaderboard', 'student-notifications', 'student-certificates', 'student-profile', 'student-contact'];
+const PUBLIC_SECTIONS = ['home', 'contact', 'gallery', 'faqs', 'student-login', 'student-register', 'admin-login', 'verify'];
+const STUDENT_SECTIONS = ['student-dashboard', 'student-quizzes', 'student-attempt', 'student-results', 'student-history', 'student-leaderboard', 'student-notifications', 'student-certificates', 'student-gallery', 'student-faqs', 'student-profile', 'student-contact'];
 const ADMIN_SECTIONS = ['admin-dashboard', 'admin-students', 'admin-quizzes', 'admin-review', 'admin-results', 'admin-leaderboard', 'admin-analytics', 'admin-announcements', 'admin-notifications', 'admin-certificates', 'admin-email', 'admin-performance', 'admin-contacts', 'admin-gallery', 'admin-advertisements', 'admin-faqs', 'admin-branding', 'admin-management', 'admin-profile'];
 
 const STUDENT_TITLES = {
   'student-dashboard': 'Dashboard', 'student-quizzes': 'Available Quizzes', 'student-attempt': 'Quiz in Progress',
   'student-results': 'Results', 'student-history': 'Quiz History', 'student-leaderboard': 'Leaderboard',
-  'student-notifications': 'Notifications', 'student-certificates': 'Certificates', 'student-profile': 'Profile', 'student-contact': 'Contact'
+  'student-notifications': 'Notifications', 'student-certificates': 'Certificates', 'student-gallery': 'Gallery',
+  'student-faqs': 'FAQs', 'student-profile': 'Profile', 'student-contact': 'Contact'
 };
 const ADMIN_TITLES = {
   'admin-dashboard': 'Dashboard', 'admin-students': 'Students', 'admin-quizzes': 'Quizzes', 'admin-review': 'Quiz Review',
@@ -279,6 +280,8 @@ async function navigate(name) {
     hideAll();
     document.getElementById('section-' + name).classList.remove('hidden');
     if (name === 'contact') renderPublicContact();
+    if (name === 'gallery') renderGallery('galleryGridPublic');
+    if (name === 'faqs') renderFaqs('faqListPublic');
     window.scrollTo(0, 0);
     closeMobileNav();
     return;
@@ -299,6 +302,7 @@ async function navigate(name) {
       'student-attempt': 'studentSectionAttempt', 'student-results': 'studentSectionResults',
       'student-history': 'studentSectionHistory', 'student-leaderboard': 'studentSectionLeaderboard',
       'student-notifications': 'studentSectionNotifications', 'student-certificates': 'studentSectionCertificates',
+      'student-gallery': 'studentSectionGallery', 'student-faqs': 'studentSectionFaqs',
       'student-profile': 'studentSectionProfile', 'student-contact': 'studentSectionContact'
     };
     document.getElementById(map[name]).classList.remove('hidden');
@@ -309,6 +313,8 @@ async function navigate(name) {
     if (name === 'student-leaderboard') loadStudentLeaderboard();
     if (name === 'student-notifications') loadStudentNotifications();
     if (name === 'student-certificates') loadStudentCertificates();
+    if (name === 'student-gallery') renderGallery('galleryGridStudent');
+    if (name === 'student-faqs') renderFaqs('faqListStudent');
     if (name === 'student-profile') loadStudentProfile();
     if (name === 'student-contact') renderContactCards('contactCardsStudent');
     window.scrollTo(0, 0);
@@ -406,6 +412,115 @@ async function renderContactCards(targetId) {
   `).join('');
 }
 function renderPublicContact() { renderContactCards('contactCardsPublic'); }
+
+async function renderGallery(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getGallery, {});
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.gallery || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No photos yet</h4></div>`; return; }
+  el.innerHTML = rows.map(g => `
+    <div class="gallery-card">
+      <img src="${escapeHtml(g.ImageUrl)}" alt="${escapeHtml(g.Title)}">
+      <div class="gallery-card-body">
+        <h4>${escapeHtml(g.Title)}</h4>
+        ${g.Caption ? `<p>${escapeHtml(g.Caption)}</p>` : ''}
+        ${g.Category ? `<span class="gallery-card-cat">${escapeHtml(g.Category)}</span>` : ''}
+      </div>
+    </div>
+  `).join('');
+}
+
+async function renderFaqs(targetId) {
+  const el = document.getElementById(targetId);
+  if (!el) return;
+  el.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getFaqs, {});
+  if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const rows = res.data.faqs || [];
+  if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No FAQs yet</h4></div>`; return; }
+
+  const groups = {};
+  rows.forEach(f => { const cat = f.Category || 'General'; (groups[cat] = groups[cat] || []).push(f); });
+
+  el.innerHTML = Object.keys(groups).map(cat => `
+    ${Object.keys(groups).length > 1 ? `<div class="faq-category-label">${escapeHtml(cat)}</div>` : ''}
+    ${groups[cat].map((f, i) => `
+      <div class="faq-item">
+        <button type="button" class="faq-question" data-faq-toggle>${escapeHtml(f.Question)}</button>
+        <div class="faq-answer">${escapeHtml(f.Answer)}</div>
+      </div>
+    `).join('')}
+  `).join('');
+
+  el.querySelectorAll('[data-faq-toggle]').forEach(btn => {
+    btn.addEventListener('click', () => btn.closest('.faq-item').classList.toggle('is-open'));
+  });
+}
+
+let adBarList = [];
+let adBarIndex = 0;
+let adBarTimer = null;
+let adBarDismissed = false;
+
+function renderAdBarSlide() {
+  if (adBarList.length === 0) return;
+  const a = adBarList[adBarIndex];
+  document.getElementById('adBarImg').src = a.ImageUrl;
+  document.getElementById('adBarTitle').textContent = a.Title;
+  const link = document.getElementById('adBarLink');
+  if (a.LinkUrl) { link.href = a.LinkUrl; link.style.pointerEvents = ''; }
+  else { link.removeAttribute('href'); link.style.pointerEvents = 'none'; }
+  document.querySelectorAll('#adBarDots span').forEach((dot, i) => dot.classList.toggle('is-active', i === adBarIndex));
+}
+
+async function initAdBar() {
+  const res = await apiCall(API_ACTIONS.getAdvertisements, {});
+  if (!res.success || adBarDismissed) return;
+  adBarList = res.data.advertisements || [];
+  if (adBarList.length === 0) return;
+
+  const dots = document.getElementById('adBarDots');
+  dots.innerHTML = adBarList.length > 1 ? adBarList.map(() => '<span></span>').join('') : '';
+  adBarIndex = 0;
+  renderAdBarSlide();
+  document.getElementById('adBarGlobal').classList.remove('hidden');
+  document.body.classList.add('has-ad-bar');
+
+  if (adBarTimer) clearInterval(adBarTimer);
+  if (adBarList.length > 1) {
+    adBarTimer = setInterval(() => {
+      adBarIndex = (adBarIndex + 1) % adBarList.length;
+      renderAdBarSlide();
+    }, 10000);
+  }
+}
+document.getElementById('adBarCloseBtn').addEventListener('click', () => {
+  adBarDismissed = true;
+  if (adBarTimer) clearInterval(adBarTimer);
+  document.getElementById('adBarGlobal').classList.add('hidden');
+  document.body.classList.remove('has-ad-bar');
+});
+
+async function applyBranding() {
+  const res = await apiCall(API_ACTIONS.getBranding, {});
+  if (!res.success) return;
+  const b = res.data.branding || {};
+  if (b.SiteName) {
+    document.title = b.SiteName + ' — Assessment Platform';
+    document.getElementById('publicBrandText').textContent = b.SiteName;
+  }
+  if (b.LogoUrl) {
+    document.getElementById('publicBrandLogo').src = b.LogoUrl;
+    document.getElementById('publicBrandLogo').classList.remove('hidden');
+    document.getElementById('publicBrandMark').classList.add('hidden');
+  }
+  if (b.FaviconUrl) document.getElementById('faviconLink').setAttribute('href', b.FaviconUrl);
+  if (b.PrimaryColor) document.documentElement.style.setProperty('--color-primary', b.PrimaryColor);
+  if (b.AccentColor) document.documentElement.style.setProperty('--color-gold', b.AccentColor);
+}
 
 /* ============================================================================
    STUDENT: REGISTRATION
@@ -2699,48 +2814,200 @@ function redVerifiedStampSVG(size = 130) {
   </svg>`;
 }
 
+// Laurel wreath — a row of small leaf pairs curving up along an arc,
+// used on either side of the certificate photo. mirror=true flips it for
+// the right-hand side.
+function certLaurelSVG(mirror) {
+  const leaves = [];
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6;
+    const angle = -95 + t * 150; // sweep from bottom to top
+    const rad = angle * Math.PI / 180;
+    const r = 58 + t * 4;
+    const cx = 70 + r * Math.cos(rad);
+    const cy = 150 + r * Math.sin(rad);
+    const scale = 0.65 + t * 0.5;
+    const rot = angle + 90;
+    leaves.push(`<g transform="translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${rot.toFixed(1)}) scale(${scale.toFixed(2)})">
+      <ellipse cx="0" cy="0" rx="15" ry="7" fill="#C9A227"/>
+      <ellipse cx="0" cy="0" rx="15" ry="7" fill="none" stroke="#8F701A" stroke-width="0.8"/>
+    </g>`);
+  }
+  return `<svg width="90" height="170" viewBox="0 0 140 220" style="${mirror ? 'transform:scaleX(-1);' : ''}">
+    <path d="M70,205 Q20,150 30,80 Q38,30 70,10" fill="none" stroke="#C9A227" stroke-width="3"/>
+    ${leaves.join('')}
+  </svg>`;
+}
+
+// Top-right medallion badge — scalloped coin edge, crown + stars, two-line
+// caption, ribbon tails beneath.
+function certMedallionSVG() {
+  const id = 'med' + Math.random().toString(36).slice(2, 8);
+  return `
+  <svg width="150" height="190" viewBox="0 0 200 240">
+    <defs><path id="${id}" d="M100,38 a62,62 0 1,1 -0.1,0"/></defs>
+    <polygon points="70,150 70,232 100,208 130,232 130,150" fill="#14235E"/>
+    <polygon points="70,150 70,232 85,220 85,150" fill="#C9A227" opacity="0.85"/>
+    <polygon points="115,150 115,220 130,232 130,150" fill="#C9A227" opacity="0.85"/>
+    <circle cx="100" cy="100" r="72" fill="#C9A227"/>
+    <circle cx="100" cy="100" r="72" fill="none" stroke="#8F701A" stroke-width="3" stroke-dasharray="7 5"/>
+    <circle cx="100" cy="100" r="60" fill="#14235E"/>
+    <circle cx="100" cy="100" r="60" fill="none" stroke="#C9A227" stroke-width="2"/>
+    <text x="100" y="66" text-anchor="middle" font-size="20" fill="#C9A227">&#128081;</text>
+    <text font-family="Georgia, serif" font-size="12.5" font-weight="800" fill="#fff" letter-spacing="1.5">
+      <textPath href="#${id}" startOffset="15%">EXCELLENCE</textPath>
+    </text>
+    <text x="100" y="112" text-anchor="middle" font-family="Georgia, serif" font-size="10.5" font-weight="700" fill="#fff" letter-spacing="1">IN EDUCATION</text>
+    <text x="100" y="132" text-anchor="middle" font-size="13" fill="#C9A227" letter-spacing="4">&#9733;&#9733;&#9733;</text>
+  </svg>`;
+}
+
+// Small navy line icons for the certificate info bar.
+function certIconSVG(name) {
+  const paths = {
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    trophy: '<path d="M8 4h8v4a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5a2 2 0 0 0 2 4M16 5h3a2 2 0 0 1-2 4"/><path d="M12 12v3M9 19h6M10 19v-2a2 2 0 0 1 4 0v2"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20V13"/>',
+    cap: '<path d="M12 4 2 9l10 5 10-5-10-5Z"/><path d="M6 11.5V17a6 3 0 0 0 12 0v-5.5"/>'
+  };
+  return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E3A8A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
+}
+
+// Small graduation-cap-over-open-book crest for the certificate header,
+// mirrors the site logo mark in vector form.
+function certLogoCrestSVG() {
+  return `<svg width="52" height="52" viewBox="0 0 52 52">
+    <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#14235E"/>
+    <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#14235E" stroke-width="2"/>
+    <circle cx="42" cy="19" r="1.6" fill="#14235E"/>
+    <path d="M42 19v9" stroke="#14235E" stroke-width="1.6"/>
+    <path d="M10 38c3-3 9-3 16-3s13 0 16 3" fill="none" stroke="#B3121B" stroke-width="2.4" stroke-linecap="round"/>
+  </svg>`;
+}
+
+// Same crest, smaller and in white, for the dark footer bar.
+function certLogoCrestSmallSVG() {
+  return `<svg width="28" height="28" viewBox="0 0 52 52">
+    <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+    <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2"/>
+  </svg>`;
+}
+
+// Decorative navy+gold ribbon-fold accent for each of the four corners of
+// the certificate border. Rotated/mirrored per-corner via CSS on the wrapper.
+function certCornerRibbonSVG() {
+  return `<svg width="120" height="120" viewBox="0 0 120 120">
+    <polygon points="0,0 120,0 0,120" fill="#14235E"/>
+    <polygon points="0,0 46,0 0,46" fill="#C9A227"/>
+    <polygon points="0,0 26,0 0,26" fill="#14235E"/>
+    <line x1="0" y1="34" x2="34" y2="0" stroke="#8F701A" stroke-width="2" opacity="0.6"/>
+    <line x1="0" y1="58" x2="58" y2="0" stroke="#0B1730" stroke-width="1.5" opacity="0.5"/>
+  </svg>`;
+}
+
 // Builds the certificate artwork as an off-DOM node so it can be captured at
 // high resolution regardless of what's currently on screen. Uses only vector
 // (SVG icons, CSS borders, web-font text) so nothing in it can look blurry.
 function buildCertificateNode(cert, signatures, qrDataUrl) {
   signatures = signatures || {};
+  const positionLabel = (CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType || '').toUpperCase();
+  const focusLine = cert.QuizName || cert.Subject || 'ARY Quize Bank';
+  const sigBlock = (imgKey, nameVal, role) => `
+    <div class="cert-sig-col">
+      ${signatures[imgKey] ? `<img class="cert-sig-img" src="${signatures[imgKey]}" alt="">` : `<span class="sig-script">${escapeHtml(nameVal || role)}</span>`}
+      <div class="cert-sig-line"></div>
+      <strong>${escapeHtml(nameVal || '')}</strong>
+      <small>${role}</small>
+    </div>`;
+
   const wrap = document.createElement('div');
   wrap.className = 'certificate-sheet';
   wrap.innerHTML = `
     <div class="certificate-border">
-      <div class="certificate-stamp">${redVerifiedStampSVG(110)}</div>
-      <div class="certificate-qr">
-        ${qrDataUrl ? `<img src="${qrDataUrl}" alt="Scan to verify">` : ''}
-        <span>Scan to verify</span>
+      <div class="cert-corner cert-corner-tl">${certCornerRibbonSVG()}</div>
+      <div class="cert-corner cert-corner-tr">${certCornerRibbonSVG()}</div>
+      <div class="cert-corner cert-corner-bl">${certCornerRibbonSVG()}</div>
+      <div class="cert-corner cert-corner-br">${certCornerRibbonSVG()}</div>
+
+      <div class="cert-header-row">
+        <div class="cert-header-left">
+          ${certLogoCrestSVG()}
+          <div>
+            <div class="cert-brand-word"><span class="navy">ARY</span> <span class="red">QUIZE BANK</span></div>
+            <div class="cert-brand-tag">Learn &nbsp;•&nbsp; Practice &nbsp;•&nbsp; Achieve Excellence</div>
+          </div>
+        </div>
+        <div class="cert-header-divider"></div>
+        <div class="cert-header-right">
+          <p>Empowering Future Nurses<br>Through Knowledge</p>
+          <div class="cert-header-rule"></div>
+          <span>BSN &nbsp;|&nbsp; Nursing Education &nbsp;|&nbsp; Academic Excellence</span>
+        </div>
       </div>
-      <div class="certificate-photo-frame">
-        <img src="${photoOrDefault(cert.StudentPhoto)}" alt="">
+
+      <div class="cert-medallion">${certMedallionSVG()}</div>
+
+      <div class="cert-side-left">
+        <span class="cert-side-label">Certificate Type:</span>
+        <div class="cert-type-pill">${escapeHtml(CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType)}</div>
+        <span class="cert-side-label" style="margin-top:16px;">Certificate ID:</span>
+        <div class="cert-id-box">${escapeHtml(cert.CertificateID)}</div>
       </div>
-      <div class="certificate-cap">🎓</div>
-      <h1 class="certificate-brand">ARY QUIZE BANK</h1>
-      <p class="certificate-slogan">Learn • Practice • Achieve Excellence</p>
-      <div class="certificate-rule"></div>
-      <h2 class="certificate-title">${escapeHtml(cert.CertificateTitle || CERT_TITLES[cert.CertificateType] || 'CERTIFICATE')}</h2>
-      <p class="certificate-presented">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
-      <div class="certificate-name">${escapeHtml(cert.StudentName)}</div>
-      <p class="certificate-body">${escapeHtml(cert.AchievementText)}</p>
-      ${!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuestions) ? `<p class="certificate-score">${escapeHtml(cert.Score)} OUT OF ${escapeHtml(cert.TotalQuestions)}</p>` : ''}
-      <div class="certificate-meta-grid">
-        <div><strong>Certificate Type</strong><span>${escapeHtml(CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType)}</span></div>
-        ${cert.QuizName ? `<div><strong>Quiz</strong><span>${escapeHtml(cert.QuizName)}</span></div>` : ''}
-        ${cert.Subject ? `<div><strong>Subject</strong><span>${escapeHtml(cert.Subject)}</span></div>` : ''}
-        ${!isEmptyVal(cert.Rank) ? `<div><strong>Rank</strong><span>#${escapeHtml(cert.Rank)}</span></div>` : ''}
-        ${!isEmptyVal(cert.Percentage) ? `<div><strong>Percentage</strong><span>${escapeHtml(cert.Percentage)}%</span></div>` : ''}
-        ${cert.Program ? `<div><strong>Program</strong><span>${escapeHtml(cert.Program)}</span></div>` : ''}
-        ${cert.Semester ? `<div><strong>Semester</strong><span>${escapeHtml(cert.Semester)}</span></div>` : ''}
-        ${cert.RollNo ? `<div><strong>Roll No.</strong><span>${escapeHtml(cert.RollNo)}</span></div>` : ''}
+
+      <div class="cert-side-right">
+        <p class="cert-quote">&ldquo;Small steps in learning<br>lead to big dreams<br>in life.&rdquo;</p>
+        <div class="cert-header-rule" style="margin:10px auto;"></div>
+        ${qrDataUrl ? `<img class="cert-qr-img" src="${qrDataUrl}" alt="Scan to verify">` : ''}
+        <span class="cert-qr-caption">Scan to Verify</span>
+        <span class="cert-qr-sub">Certificate ID</span>
       </div>
-      <div class="certificate-signatures">
-        <div><span class="sig-script">${escapeHtml(cert.FounderName || signatures.FounderName || 'Founder')}</span><strong>${escapeHtml(cert.FounderName || signatures.FounderName || '')}</strong><small>Founder</small></div>
-        <div><span class="sig-script">${escapeHtml(cert.MentorName || 'Mentor')}</span><strong>${escapeHtml(cert.MentorName || '')}</strong><small>Mentor</small></div>
-        <div><span class="sig-script">${escapeHtml(cert.AdminName || 'Admin')}</span><strong>${escapeHtml(cert.AdminName || '')}</strong><small>Admin</small></div>
+
+      <div class="cert-center">
+        <h1 class="cert-title-main">CERTIFICATE</h1>
+        <p class="cert-title-sub">OF ACHIEVEMENT</p>
+        <div class="cert-header-rule"></div>
+        <p class="certificate-presented">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
+
+        <div class="cert-photo-row">
+          ${certLaurelSVG(false)}
+          <div class="certificate-photo-frame"><img src="${photoOrDefault(cert.StudentPhoto)}" alt=""></div>
+          ${certLaurelSVG(true)}
+        </div>
+
+        <div class="certificate-name">${escapeHtml(cert.StudentName)}</div>
+
+        <p class="certificate-body">
+          has demonstrated outstanding performance and dedication in
+          <strong>${escapeHtml(focusLine)}</strong> and has secured the position of
+        </p>
+        <p class="cert-position-line">${escapeHtml(positionLabel)}</p>
+        <p class="certificate-body">in the ARY Quiz Bank platform.</p>
+        <p class="cert-encourage">${escapeHtml(cert.AchievementText || 'Your hard work, commitment and passion for learning are truly commendable. Keep striving for excellence!')}</p>
+
+        <div class="cert-info-bar">
+          <div><span>${certIconSVG('calendar')}</span><div><strong>Issue Date</strong><em>${escapeHtml(cert.IssuedDate || '')}</em></div></div>
+          <div><span>${certIconSVG('trophy')}</span><div><strong>Rank / Position</strong><em>${!isEmptyVal(cert.Rank) ? '#' + escapeHtml(cert.Rank) : '—'}</em></div></div>
+          <div><span>${certIconSVG('chart')}</span><div><strong>Score / Percentage</strong><em>${!isEmptyVal(cert.Percentage) ? escapeHtml(cert.Percentage) + '%' : (!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuestions) ? escapeHtml(cert.Score) + '/' + escapeHtml(cert.TotalQuestions) : '—')}</em></div></div>
+          <div><span>${certIconSVG('cap')}</span><div><strong>Quiz / Subject</strong><em>${escapeHtml(cert.QuizName || cert.Subject || '—')}</em></div></div>
+        </div>
+
+        <div class="certificate-signatures">
+          ${sigBlock('founderSignature', cert.FounderName || signatures.founderName, 'Founder')}
+          ${sigBlock('mentorSignature', cert.MentorName || signatures.mentorName, 'Mentor')}
+          ${sigBlock('adminSignature', cert.AdminName, 'Admin')}
+        </div>
       </div>
-      <p class="certificate-issued">Issued ${escapeHtml(cert.IssuedDate)} · Certificate ID ${escapeHtml(cert.CertificateID)}</p>
+
+      <div class="cert-stamp-wrap">${redVerifiedStampSVG(105)}</div>
+
+      <div class="cert-footer-bar">
+        <div class="cert-footer-left">${certLogoCrestSmallSVG()} <div><strong>ARY Quiz Bank</strong><span>Learn • Practice • Achieve Excellence</span></div></div>
+        <div class="cert-footer-center">
+          <span>🌐 www.aryquizebank.com</span>
+          <span>✉ info@aryquizebank.com</span>
+        </div>
+        <div class="cert-footer-right"><em>Better Students</em><strong>Brighter Future</strong></div>
+      </div>
     </div>
   `;
   wrap.style.position = 'fixed';
@@ -3074,6 +3341,10 @@ document.getElementById('certificateForm').addEventListener('submit', async (e) 
   const res = await apiCall(API_ACTIONS.issueCertificate, {
     studentId,
     certificateType: document.getElementById('certType').value,
+    quizName: document.getElementById('certQuizName').value.trim(),
+    subject: document.getElementById('certSubject').value.trim(),
+    rank: document.getElementById('certRank').value.trim(),
+    percentage: document.getElementById('certPercentage').value.trim(),
     program: document.getElementById('certProgram').value.trim(),
     semester: document.getElementById('certSemester').value.trim(),
     shift: document.getElementById('certShift').value.trim(),
@@ -3127,6 +3398,8 @@ async function renderVerifyPage(certificateId) {
 
 (function init() {
   document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
+  applyBranding();
+  initAdBar();
 
   const verifyId = new URLSearchParams(location.search).get('verify');
   if (verifyId) { navigate('verify'); renderVerifyPage(verifyId); return; }

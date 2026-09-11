@@ -627,8 +627,10 @@ async function fbIssueCertificate(p) {
 
   const id = fbGenerateId('CERT');
   await db.ref('certificates/' + id).set({
-    CertificateID: id, StudentID: p.studentId, StudentName: studentRow.Name, CertificateType: p.certificateType,
+    CertificateID: id, StudentID: p.studentId, StudentName: studentRow.Name, StudentPhoto: studentRow.Photo || '',
+    CertificateType: p.certificateType,
     Program: p.program || '', Semester: p.semester || '', Shift: p.shift || '', RollNo: p.rollNo || '',
+    QuizName: p.quizName || '', Subject: p.subject || '', Rank: p.rank || '', Percentage: p.percentage || '',
     AchievementText: p.achievementText, Score: p.score || '', TotalQuizzes: p.totalQuizzes || '',
     MentorName: p.mentorName || '', AdminName: p.adminName || auth.admin.Name,
     IssuedDate: fbFormatDate(new Date()), Status: 'Active'
