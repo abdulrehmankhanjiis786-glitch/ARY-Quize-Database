@@ -17,10 +17,15 @@
 <!-- ============================================================ -->
 <div id="adBarGlobal" class="ad-bar hidden">
   <button id="adBarCloseBtn" class="ad-bar-close" aria-label="Close">&times;</button>
+  <button id="adBarPrevBtn" class="ad-bar-arrow ad-bar-arrow-prev" aria-label="Previous ad">&#8249;</button>
   <a id="adBarLink" class="ad-bar-link" href="#" target="_blank" rel="noopener">
     <img id="adBarImg" src="" alt="">
+    <div class="ad-bar-scrim"></div>
+    <span class="ad-bar-sponsored">Sponsored</span>
     <span id="adBarTitle" class="ad-bar-title"></span>
+    <span class="ad-bar-cta">Explore Now →</span>
   </a>
+  <button id="adBarNextBtn" class="ad-bar-arrow ad-bar-arrow-next" aria-label="Next ad">&#8250;</button>
   <div id="adBarDots" class="ad-bar-dots"></div>
 </div>
 
@@ -50,7 +55,14 @@
   <div class="public-header-inner">
     <a href="#" class="brand" data-nav="home">
       <img id="publicBrandLogo" class="brand-logo hidden" src="" alt="">
-      <span id="publicBrandMark" class="brand-mark">AQ</span>
+      <span id="publicBrandMark" class="brand-mark">
+        <svg viewBox="0 0 52 52" width="24" height="24">
+          <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+          <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2.4"/>
+          <circle cx="42" cy="19" r="1.8" fill="#fff"/>
+          <path d="M42 19v9" stroke="#fff" stroke-width="1.8"/>
+        </svg>
+      </span>
       <span id="publicBrandText" class="brand-text">ARY Quize Bank</span>
     </a>
     <nav class="public-nav">
@@ -235,10 +247,26 @@
         <span>Email</span>
         <input type="email" id="regEmail" required>
       </label>
-      <label class="field">
-        <span>Class</span>
-        <input type="text" id="regClass" placeholder="e.g. BSN-3A" required>
-      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Class</span>
+          <input type="text" id="regClass" value="BSN" readonly>
+        </label>
+        <label class="field">
+          <span>Semester</span>
+          <select id="regSemester" required>
+            <option value="">Select semester</option>
+            <option value="1">Semester 1</option>
+            <option value="2">Semester 2</option>
+            <option value="3">Semester 3</option>
+            <option value="4">Semester 4</option>
+            <option value="5">Semester 5</option>
+            <option value="6">Semester 6</option>
+            <option value="7">Semester 7</option>
+            <option value="8">Semester 8</option>
+          </select>
+        </label>
+      </div>
       <div class="field-row">
         <label class="field">
           <span>Password</span>
@@ -289,7 +317,14 @@
 <div id="studentApp" class="app-shell hidden">
   <aside class="sidebar" id="studentSidebar">
     <div class="sidebar-brand">
-      <span class="brand-mark">AQ</span>
+      <span class="brand-mark">
+        <svg viewBox="0 0 52 52" width="24" height="24">
+          <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+          <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2.4"/>
+          <circle cx="42" cy="19" r="1.8" fill="#fff"/>
+          <path d="M42 19v9" stroke="#fff" stroke-width="1.8"/>
+        </svg>
+      </span>
       <span class="brand-text">ARY Quize Bank</span>
     </div>
     <div class="sidebar-user">
@@ -361,6 +396,16 @@
         <div class="section-head-row">
           <h2>Available Quizzes</h2>
           <button class="btn btn-outline btn-sm" id="refreshQuizzesBtn">Refresh</button>
+        </div>
+        <div class="quiz-filter-row">
+          <select id="quizFilterSubject">
+            <option value="">All Subjects</option>
+          </select>
+          <select id="quizFilterType">
+            <option value="">All Types</option>
+            <option value="Regular">Regular</option>
+            <option value="Mock">Mock</option>
+          </select>
         </div>
         <div id="studentQuizGrid" class="quiz-grid"></div>
       </section>
@@ -460,8 +505,8 @@
             <input type="email" id="profileEmail" disabled>
           </label>
           <label class="field">
-            <span>Class</span>
-            <input type="text" id="profileClass" required>
+            <span>Class <span class="field-hint">(contact admin to change semester)</span></span>
+            <input type="text" id="profileClass" readonly>
           </label>
           <label class="field">
             <span>New Password <span class="field-hint">(leave blank to keep current)</span></span>
@@ -504,7 +549,14 @@
 <div id="adminApp" class="app-shell hidden">
   <aside class="sidebar sidebar-dark" id="adminSidebar">
     <div class="sidebar-brand">
-      <span class="brand-mark">AQ</span>
+      <span class="brand-mark">
+        <svg viewBox="0 0 52 52" width="24" height="24">
+          <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+          <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2.4"/>
+          <circle cx="42" cy="19" r="1.8" fill="#fff"/>
+          <path d="M42 19v9" stroke="#fff" stroke-width="1.8"/>
+        </svg>
+      </span>
       <span class="brand-text">ARY Quize Bank</span>
     </div>
     <div class="sidebar-user">
@@ -1015,6 +1067,20 @@
         <input type="text" id="quizSubject" placeholder="e.g. Pharmacology">
       </label>
       <label class="field">
+        <span>Semester</span>
+        <select id="quizSemester">
+          <option value="">Select semester</option>
+          <option value="1">Semester 1</option>
+          <option value="2">Semester 2</option>
+          <option value="3">Semester 3</option>
+          <option value="4">Semester 4</option>
+          <option value="5">Semester 5</option>
+          <option value="6">Semester 6</option>
+          <option value="7">Semester 7</option>
+          <option value="8">Semester 8</option>
+        </select>
+      </label>
+      <label class="field">
         <span>Duration (minutes)</span>
         <input type="number" id="quizDuration" min="1" required>
       </label>
@@ -1096,7 +1162,14 @@
     <div id="reportCaptureArea" class="report-doc">
       <div class="report-doc-head">
         <div class="report-doc-brand">
-          <span class="brand-mark">AQ</span>
+          <span class="brand-mark">
+        <svg viewBox="0 0 52 52" width="24" height="24">
+          <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+          <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2.4"/>
+          <circle cx="42" cy="19" r="1.8" fill="#fff"/>
+          <path d="M42 19v9" stroke="#fff" stroke-width="1.8"/>
+        </svg>
+      </span>
           <span>ARY Quize Bank — Performance Report</span>
         </div>
         <img id="reportStudentPhoto" class="avatar-sm" src="" alt="">
@@ -1161,6 +1234,58 @@
       <div class="modal-actions">
         <button type="button" class="btn btn-ghost" id="contactCancelBtn">Cancel</button>
         <button type="submit" class="btn btn-primary" id="contactSaveBtn">Save</button>
+      </div>
+    </form>
+  </div>
+</div>
+
+<!-- Gallery full-screen viewer (public + student gallery) -->
+<div id="galleryLightbox" class="gallery-lightbox hidden">
+  <button id="galleryLightboxClose" class="gallery-lightbox-close" aria-label="Close">&times;</button>
+  <button id="galleryLightboxPrev" class="gallery-lightbox-nav gallery-lightbox-prev" aria-label="Previous">&#8249;</button>
+  <div class="gallery-lightbox-body">
+    <img id="galleryLightboxImg" src="" alt="">
+    <div class="gallery-lightbox-caption">
+      <strong id="galleryLightboxTitle"></strong>
+      <span id="galleryLightboxCounter"></span>
+    </div>
+  </div>
+  <button id="galleryLightboxNext" class="gallery-lightbox-nav gallery-lightbox-next" aria-label="Next">&#8250;</button>
+</div>
+
+<!-- Student edit modal (admin) -->
+<div id="studentEditModal" class="modal-backdrop hidden">
+  <div class="modal">
+    <h3>Edit Student</h3>
+    <form id="studentEditForm">
+      <input type="hidden" id="studentEditId">
+      <label class="field">
+        <span>Full Name</span>
+        <input type="text" id="studentEditName" required>
+      </label>
+      <div class="field-row">
+        <label class="field">
+          <span>Class</span>
+          <input type="text" value="BSN" readonly>
+        </label>
+        <label class="field">
+          <span>Semester</span>
+          <select id="studentEditSemester" required>
+            <option value="">Select semester</option>
+            <option value="1">Semester 1</option>
+            <option value="2">Semester 2</option>
+            <option value="3">Semester 3</option>
+            <option value="4">Semester 4</option>
+            <option value="5">Semester 5</option>
+            <option value="6">Semester 6</option>
+            <option value="7">Semester 7</option>
+            <option value="8">Semester 8</option>
+          </select>
+        </label>
+      </div>
+      <div class="modal-actions">
+        <button type="button" class="btn btn-ghost" id="studentEditCancelBtn">Cancel</button>
+        <button type="submit" class="btn btn-primary" id="studentEditSaveBtn">Save</button>
       </div>
     </form>
   </div>
@@ -1460,15 +1585,10 @@
       <label class="field">
         <span>Certificate Type</span>
         <select id="certType">
-          <option value="QuizTopPerformer">Quiz Top Performer</option>
+          <option value="QuizTopPerformer">Top Performer</option>
           <option value="OverallTopPerformer">Overall Top Performer</option>
-          <option value="ConsistentStudent">Consistent Student</option>
           <option value="SubjectExcellence">Subject Excellence</option>
-          <option value="QuizCompletion">Quiz Completion</option>
-          <option value="SpecialAchievement">Special Achievement</option>
-          <option value="OutstandingPerformance">Outstanding Performance</option>
-          <option value="Completion">Course / Mock Test Completion</option>
-          <option value="MockTest">Mock Test Certificate</option>
+          <option value="SpecialAchievement">Special Achievement (Custom)</option>
         </select>
       </label>
       <div class="field-row">

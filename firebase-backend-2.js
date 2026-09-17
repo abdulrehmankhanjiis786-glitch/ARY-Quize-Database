@@ -62,7 +62,7 @@ async function fbUpdateQuizSettings(p) {
   const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
   var missing = validateRequired(p, ['quizName']);
   if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
-  const editable = ['Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions'];
+  const editable = ['Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions', 'Subject', 'Semester'];
   const updates = {};
   editable.forEach(function (key) {
     const paramKey = key.charAt(0).toLowerCase() + key.slice(1);

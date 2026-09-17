@@ -413,6 +413,38 @@ async function renderContactCards(targetId) {
 }
 function renderPublicContact() { renderContactCards('contactCardsPublic'); }
 
+let galleryLightboxList = [];
+let galleryLightboxIndex = 0;
+
+function renderGalleryLightboxSlide() {
+  const g = galleryLightboxList[galleryLightboxIndex];
+  document.getElementById('galleryLightboxImg').src = g.ImageUrl;
+  document.getElementById('galleryLightboxTitle').textContent = g.Title || '';
+  document.getElementById('galleryLightboxCounter').textContent = (galleryLightboxIndex + 1) + ' / ' + galleryLightboxList.length;
+}
+function openGalleryLightbox(list, startIndex) {
+  galleryLightboxList = list;
+  galleryLightboxIndex = startIndex;
+  renderGalleryLightboxSlide();
+  document.getElementById('galleryLightbox').classList.remove('hidden');
+}
+document.getElementById('galleryLightboxClose').addEventListener('click', () => document.getElementById('galleryLightbox').classList.add('hidden'));
+document.getElementById('galleryLightbox').addEventListener('click', (e) => { if (e.target.id === 'galleryLightbox') e.currentTarget.classList.add('hidden'); });
+document.getElementById('galleryLightboxPrev').addEventListener('click', () => {
+  galleryLightboxIndex = (galleryLightboxIndex - 1 + galleryLightboxList.length) % galleryLightboxList.length;
+  renderGalleryLightboxSlide();
+});
+document.getElementById('galleryLightboxNext').addEventListener('click', () => {
+  galleryLightboxIndex = (galleryLightboxIndex + 1) % galleryLightboxList.length;
+  renderGalleryLightboxSlide();
+});
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('galleryLightbox').classList.contains('hidden')) return;
+  if (e.key === 'Escape') document.getElementById('galleryLightbox').classList.add('hidden');
+  if (e.key === 'ArrowLeft') document.getElementById('galleryLightboxPrev').click();
+  if (e.key === 'ArrowRight') document.getElementById('galleryLightboxNext').click();
+});
+
 async function renderGallery(targetId) {
   const el = document.getElementById(targetId);
   if (!el) return;
@@ -421,8 +453,8 @@ async function renderGallery(targetId) {
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   const rows = res.data.gallery || [];
   if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No photos yet</h4></div>`; return; }
-  el.innerHTML = rows.map(g => `
-    <div class="gallery-card">
+  el.innerHTML = rows.map((g, i) => `
+    <div class="gallery-card" data-idx="${i}">
       <img src="${escapeHtml(g.ImageUrl)}" alt="${escapeHtml(g.Title)}">
       <div class="gallery-card-body">
         <h4>${escapeHtml(g.Title)}</h4>
@@ -431,6 +463,9 @@ async function renderGallery(targetId) {
       </div>
     </div>
   `).join('');
+  el.querySelectorAll('.gallery-card').forEach(card => {
+    card.addEventListener('click', () => openGalleryLightbox(rows, Number(card.dataset.idx)));
+  });
 }
 
 async function renderFaqs(targetId) {
@@ -484,6 +519,8 @@ async function initAdBar() {
 
   const dots = document.getElementById('adBarDots');
   dots.innerHTML = adBarList.length > 1 ? adBarList.map(() => '<span></span>').join('') : '';
+  document.getElementById('adBarPrevBtn').classList.toggle('hidden', adBarList.length < 2);
+  document.getElementById('adBarNextBtn').classList.toggle('hidden', adBarList.length < 2);
   adBarIndex = 0;
   renderAdBarSlide();
   document.getElementById('adBarGlobal').classList.remove('hidden');
@@ -494,7 +531,7 @@ async function initAdBar() {
     adBarTimer = setInterval(() => {
       adBarIndex = (adBarIndex + 1) % adBarList.length;
       renderAdBarSlide();
-    }, 10000);
+    }, 8000);
   }
 }
 document.getElementById('adBarCloseBtn').addEventListener('click', () => {
@@ -502,6 +539,16 @@ document.getElementById('adBarCloseBtn').addEventListener('click', () => {
   if (adBarTimer) clearInterval(adBarTimer);
   document.getElementById('adBarGlobal').classList.add('hidden');
   document.body.classList.remove('has-ad-bar');
+});
+document.getElementById('adBarPrevBtn').addEventListener('click', () => {
+  if (adBarList.length < 2) return;
+  adBarIndex = (adBarIndex - 1 + adBarList.length) % adBarList.length;
+  renderAdBarSlide();
+});
+document.getElementById('adBarNextBtn').addEventListener('click', () => {
+  if (adBarList.length < 2) return;
+  adBarIndex = (adBarIndex + 1) % adBarList.length;
+  renderAdBarSlide();
 });
 
 async function applyBranding() {
@@ -544,11 +591,13 @@ document.getElementById('studentRegisterForm').addEventListener('submit', async 
 
   const name = document.getElementById('regName').value.trim();
   const email = document.getElementById('regEmail').value.trim();
-  const className = document.getElementById('regClass').value.trim();
+  const semester = document.getElementById('regSemester').value;
+  const className = semester ? ('BSN - Semester ' + semester) : '';
   const pw = document.getElementById('regPassword').value;
   const pw2 = document.getElementById('regConfirmPassword').value;
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.classList.remove('hidden'); return; }
+  if (!semester) { errEl.textContent = 'Please select your semester.'; errEl.classList.remove('hidden'); return; }
   if (pw !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
   if (pw.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
   if (!regPhotoData) { errEl.textContent = 'Profile Picture Required – Please upload your profile picture to complete your registration.'; errEl.classList.remove('hidden'); return; }
@@ -666,13 +715,29 @@ function renderResultsTable(rows) {
 /* ============================================================================
    STUDENT: AVAILABLE QUIZZES
    ============================================================================ */
+let studentQuizzesCache = [];
+
 async function loadStudentQuizzes() {
   const grid = document.getElementById('studentQuizGrid');
   grid.innerHTML = `<div class="empty-state">Loading quizzes…</div>`;
   const res = await apiCall(API_ACTIONS.getQuizzes, {});
   if (!res.success) { grid.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
-  const quizzes = res.data.quizzes || [];
-  if (quizzes.length === 0) { grid.innerHTML = `<div class="empty-state"><h4>No quizzes available right now</h4><p>Check back later.</p></div>`; return; }
+  studentQuizzesCache = res.data.quizzes || [];
+
+  const subjectSelect = document.getElementById('quizFilterSubject');
+  const subjects = [...new Set(studentQuizzesCache.map(q => q.subject).filter(Boolean))].sort();
+  subjectSelect.innerHTML = `<option value="">All Subjects</option>` + subjects.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+
+  renderStudentQuizGrid();
+}
+function renderStudentQuizGrid() {
+  const grid = document.getElementById('studentQuizGrid');
+  const subjectFilter = document.getElementById('quizFilterSubject').value;
+  const typeFilter = document.getElementById('quizFilterType').value;
+  const quizzes = studentQuizzesCache.filter(q =>
+    (!subjectFilter || q.subject === subjectFilter) && (!typeFilter || q.quizType === typeFilter)
+  );
+  if (quizzes.length === 0) { grid.innerHTML = `<div class="empty-state"><h4>No quizzes match this filter</h4></div>`; return; }
   grid.innerHTML = quizzes.map(q => `
     <div class="quiz-card">
       <div class="quiz-card-top">
@@ -680,6 +745,7 @@ async function loadStudentQuizzes() {
         ${badge(q.quizType || 'Regular', q.quizType === 'Mock' ? 'pending' : 'approved')}
       </div>
       <div class="quiz-meta-row">
+        ${q.subject ? `<span>📘 ${escapeHtml(q.subject)}</span>` : ''}
         <span>📝 ${q.questionCount} questions</span>
         <span>⏱ ${q.durationMinutes} min</span>
         ${q.expiryDate ? `<span>📅 Expires ${escapeHtml(q.expiryDate)} ${escapeHtml(q.expiryTime || '')}</span>` : ''}
@@ -692,6 +758,8 @@ async function loadStudentQuizzes() {
     btn.addEventListener('click', () => startQuizAttempt(btn.dataset.quiz));
   });
 }
+document.getElementById('quizFilterSubject').addEventListener('change', renderStudentQuizGrid);
+document.getElementById('quizFilterType').addEventListener('change', renderStudentQuizGrid);
 document.getElementById('refreshQuizzesBtn').addEventListener('click', loadStudentQuizzes);
 
 /* ============================================================================
@@ -1305,18 +1373,47 @@ function renderStudentsTable() {
           ${s.Status === 'Approved' ? `<button class="btn btn-outline btn-sm" data-action="deactivate" data-id="${escapeHtml(s.StudentID)}">Deactivate</button>` : ''}
           ${s.Status === 'Deactivated' ? `<button class="btn btn-outline btn-sm" data-action="approve" data-id="${escapeHtml(s.StudentID)}">Reactivate</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-action="performance" data-id="${escapeHtml(s.StudentID)}">View Performance</button>
+          <button class="btn btn-outline btn-sm" data-action="edit" data-id="${escapeHtml(s.StudentID)}">Edit</button>
         </td>
       </tr>
     `).join('')}
   </tbody></table>`;
 
-  el.querySelectorAll('[data-action]:not([data-action="performance"])').forEach(btn => {
+  el.querySelectorAll('[data-action]:not([data-action="performance"]):not([data-action="edit"])').forEach(btn => {
     btn.addEventListener('click', () => handleStudentAction(btn.dataset.action, btn.dataset.id));
   });
   el.querySelectorAll('[data-action="performance"]').forEach(btn => {
     btn.addEventListener('click', () => { navigate('admin-performance'); loadStudentPerformance(btn.dataset.id); });
   });
+  el.querySelectorAll('[data-action="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => openStudentEditModal(btn.dataset.id));
+  });
 }
+
+function openStudentEditModal(studentId) {
+  const s = allStudentsCache.find(r => r.StudentID === studentId);
+  if (!s) return;
+  document.getElementById('studentEditId').value = s.StudentID;
+  document.getElementById('studentEditName').value = s.Name || '';
+  const match = /Semester\s*(\d+)/i.exec(s.Class || '');
+  document.getElementById('studentEditSemester').value = match ? match[1] : '';
+  openModal('studentEditModal');
+}
+document.getElementById('studentEditCancelBtn').addEventListener('click', () => closeModal('studentEditModal'));
+document.getElementById('studentEditForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const semester = document.getElementById('studentEditSemester').value;
+  const btn = document.getElementById('studentEditSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.updateStudentProfile, {
+    studentId: document.getElementById('studentEditId').value,
+    name: document.getElementById('studentEditName').value.trim(),
+    class: semester ? ('BSN - Semester ' + semester) : ''
+  });
+  setBtnLoading(btn, false);
+  if (res.success) { toast('Student updated.', 'success'); closeModal('studentEditModal'); loadAdminStudents(); }
+  else toast(res.message || 'Update failed.', 'error');
+});
 
 async function handleStudentAction(action, studentId) {
   const labels = { approve: 'approve', reject: 'reject', deactivate: 'deactivate' };
@@ -1353,11 +1450,13 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   const quizzes = res.data.quizzes || [];
   if (quizzes.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No quiz tabs detected</h4><p>Add a new sheet tab with Question/OptionA-D/CorrectAnswer columns.</p></div>`; return; }
 
-  el.innerHTML = `<table><thead><tr><th>Quiz</th><th>Status</th><th>Questions</th><th>Duration</th><th>Type</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>
+  el.innerHTML = `<table><thead><tr><th>Quiz</th><th>Subject</th><th>Semester</th><th>Status</th><th>Questions</th><th>Duration</th><th>Type</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>
     ${quizzes.map(q => {
       const isActive = q.Active === true || String(q.Active).toUpperCase() === 'TRUE';
       return `<tr>
         <td>${escapeHtml(q.QuizName)}</td>
+        <td>${escapeHtml(q.Subject || '—')}</td>
+        <td>${q.Semester ? 'Sem ' + escapeHtml(q.Semester) : '—'}</td>
         <td>${badge(isActive ? 'Published' : 'Inactive', isActive ? 'published' : 'inactive')} ${q.expired ? badge('Expired', 'rejected') : ''}</td>
         <td>${q.questionCount}</td>
         <td>${escapeHtml(q.DurationMinutes)} min</td>
@@ -1376,6 +1475,17 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   el.querySelectorAll('[data-action="toggle"]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const active = btn.dataset.active === 'true';
+      const quiz = quizzes.find(q => q.QuizName === btn.dataset.name);
+
+      // Publishing (not unpublishing) and no semester set yet — ask before it goes live.
+      if (!active && quiz && isEmptyVal(quiz.Semester)) {
+        const semester = prompt(`Which semester is "${btn.dataset.name}" for? Enter a number 1–8:`);
+        if (semester === null) return;
+        if (!/^[1-8]$/.test(semester.trim())) { toast('Please enter a semester number from 1 to 8.', 'error'); return; }
+        const setRes = await apiCall(API_ACTIONS.updateQuizSettings, { quizName: btn.dataset.name, semester: semester.trim(), ...adminAuthParams() });
+        if (!setRes.success) { toast(setRes.message || 'Could not save semester.', 'error'); return; }
+      }
+
       const res2 = await apiCall(API_ACTIONS.setQuizActive, { quizName: btn.dataset.name, active: !active, ...adminAuthParams() });
       if (res2.success) { toast(!active ? 'Quiz published.' : 'Quiz unpublished.', 'success'); loadAdminQuizzes(targetId); }
       else toast(res2.message || 'Could not update quiz.', 'error');
@@ -1407,6 +1517,7 @@ async function handleDeleteQuiz(quizName, targetId) {
 function openQuizSettingsModal(quizName, settings) {
   document.getElementById('quizSettingsName').textContent = quizName;
   document.getElementById('quizSubject').value = settings.Subject || '';
+  document.getElementById('quizSemester').value = settings.Semester || '';
   document.getElementById('quizDuration').value = settings.DurationMinutes || 30;
   document.getElementById('quizType').value = settings.QuizType || 'Regular';
   document.getElementById('quizAllowMultiple').checked = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
@@ -1425,6 +1536,8 @@ document.getElementById('quizSettingsForm').addEventListener('submit', async (e)
   setBtnLoading(btn, true);
   const res = await apiCall(API_ACTIONS.updateQuizSettings, {
     quizName,
+    subject: document.getElementById('quizSubject').value.trim(),
+    semester: document.getElementById('quizSemester').value,
     durationMinutes: document.getElementById('quizDuration').value,
     quizType: document.getElementById('quizType').value,
     allowMultipleAttempts: document.getElementById('quizAllowMultiple').checked,
@@ -2771,20 +2884,12 @@ async function shareImageViaWhatsapp(elementId, filename, caption) {
 const CERT_TITLES = {
   QuizTopPerformer: 'CERTIFICATE OF ACHIEVEMENT',
   OverallTopPerformer: 'CERTIFICATE OF ACHIEVEMENT',
-  ConsistentStudent: 'CERTIFICATE OF RECOGNITION',
   SubjectExcellence: 'CERTIFICATE OF EXCELLENCE',
-  QuizCompletion: 'CERTIFICATE OF COMPLETION',
-  SpecialAchievement: 'CERTIFICATE OF SPECIAL ACHIEVEMENT',
-  // legacy types kept so certificates issued before this upgrade still render
-  Completion: 'CERTIFICATE OF COMPLETION',
-  OutstandingPerformance: 'CERTIFICATE OF OUTSTANDING PERFORMANCE',
-  MockTest: 'MOCK TEST COMPLETION CERTIFICATE'
+  SpecialAchievement: 'CERTIFICATE OF SPECIAL ACHIEVEMENT'
 };
 const CERT_TYPE_LABEL = {
-  QuizTopPerformer: 'Quiz Top Performer', OverallTopPerformer: 'Overall Top Performer',
-  ConsistentStudent: 'Consistent Student', SubjectExcellence: 'Subject Excellence',
-  QuizCompletion: 'Quiz Completion', SpecialAchievement: 'Special Achievement',
-  Completion: 'Completion', OutstandingPerformance: 'Outstanding Performance', MockTest: 'Mock Test'
+  QuizTopPerformer: 'Top Performer', OverallTopPerformer: 'Overall Top Performer',
+  SubjectExcellence: 'Subject Excellence', SpecialAchievement: 'Special Achievement'
 };
 
 // Original professional red-ink "VERIFIED" stamp — circular, slightly rotated,
@@ -2992,9 +3097,9 @@ function buildCertificateNode(cert, signatures, qrDataUrl) {
         </div>
 
         <div class="certificate-signatures">
-          ${sigBlock('founderSignature', cert.FounderName || signatures.founderName, 'Founder')}
-          ${sigBlock('mentorSignature', cert.MentorName || signatures.mentorName, 'Mentor')}
-          ${sigBlock('adminSignature', cert.AdminName, 'Admin')}
+          ${sigBlock('FounderSignature', cert.FounderName || signatures.FounderName, 'Founder')}
+          ${sigBlock('MentorSignature', cert.MentorName || signatures.MentorName, 'Mentor')}
+          ${sigBlock('AdminSignature', cert.AdminName, 'Admin')}
         </div>
       </div>
 

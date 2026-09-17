@@ -166,6 +166,8 @@ async function fbGetQuizzes(p) {
     const questions = qSnap.val() || [];
     out.push({
       quizName: quizName,
+      subject: settings.Subject || '',
+      semester: settings.Semester || '',
       quizType: settings.QuizType || 'Regular',
       durationMinutes: settings.DurationMinutes || 30,
       allowMultipleAttempts: settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE',
