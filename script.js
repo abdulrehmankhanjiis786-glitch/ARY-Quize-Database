@@ -608,12 +608,12 @@ document.getElementById('studentRegisterForm').addEventListener('submit', async 
   setBtnLoading(btn, false);
 
   if (res.success) {
-    okEl.textContent = res.message || 'Registration submitted. Waiting for admin approval.';
+    okEl.textContent = "Registration Successful — Your account is now pending Admin Approval. You'll be notified once approved.";
     okEl.classList.remove('hidden');
     e.target.reset();
     regPhotoData = '';
     document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
-    toast('Account created — waiting for approval.', 'success');
+    toast('Registration Successful — pending Admin Approval.', 'success');
   } else {
     errEl.textContent = res.message || 'Registration failed.';
     errEl.classList.remove('hidden');
