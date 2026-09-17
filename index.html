@@ -887,6 +887,17 @@
           </label>
           <p class="field-hint" id="emailAudienceCount">—</p>
           <label class="field">
+            <span>Template</span>
+            <select id="emailTemplateSelect">
+              <option value="blank">Custom (blank)</option>
+              <option value="approval">Account Approved</option>
+              <option value="reminder">Quiz Reminder</option>
+              <option value="certificate">Certificate Ready</option>
+              <option value="lowscore">Low Score Follow-up</option>
+              <option value="announcement">General Announcement</option>
+            </select>
+          </label>
+          <label class="field">
             <span>Subject</span>
             <input type="text" id="emailCenterSubject" required>
           </label>

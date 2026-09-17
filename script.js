@@ -3214,6 +3214,39 @@ async function loadAdminCertificates() {
 /* ---------------------------------------------------------------------------
    EMAIL CENTER
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   EMAIL CENTER — ready-made templates ({name} is replaced per-recipient)
+--------------------------------------------------------------------------- */
+const EMAIL_TEMPLATES = {
+  blank: { subject: '', message: '' },
+  approval: {
+    subject: 'Your ARY Quiz Bank account has been approved',
+    message: 'Hi {name},\n\nGreat news — your account has been approved. You can now log in and start attempting your assigned quizzes.\n\n— ARY Quiz Bank'
+  },
+  reminder: {
+    subject: 'Reminder: You have a quiz pending',
+    message: 'Hi {name},\n\nThis is a reminder that you have a quiz waiting to be attempted. Please log in and complete it before it expires.\n\n— ARY Quiz Bank'
+  },
+  certificate: {
+    subject: 'Your certificate is ready',
+    message: 'Hi {name},\n\nCongratulations! Your certificate is ready and available under the Certificates tab in your dashboard.\n\n— ARY Quiz Bank'
+  },
+  lowscore: {
+    subject: "Let's review your recent quiz result",
+    message: 'Hi {name},\n\nWe noticed your recent quiz score was lower than usual. Please reach out to your mentor if you need help before the next assessment.\n\n— ARY Quiz Bank'
+  },
+  announcement: {
+    subject: 'Important announcement from ARY Quiz Bank',
+    message: 'Hi {name},\n\n[Write your announcement here]\n\n— ARY Quiz Bank'
+  }
+};
+document.getElementById('emailTemplateSelect').addEventListener('change', (e) => {
+  const t = EMAIL_TEMPLATES[e.target.value];
+  if (!t) return;
+  document.getElementById('emailCenterSubject').value = t.subject;
+  document.getElementById('emailCenterMessage').value = t.message;
+});
+
 let emailSelectedStudentIds = [];
 
 function currentEmailAudiencePayload() {
@@ -3289,7 +3322,7 @@ document.getElementById('emailCenterForm').addEventListener('submit', async (e) 
   setBtnLoading(btn, true);
   try {
     const res = await apiCall(API_ACTIONS.sendBulkEmail, payload);
-    if (res.success) { toast(res.message, 'success'); e.target.reset(); emailSelectedStudentIds = []; renderEmailSelectedStudents(); }
+    if (res.success) { toast(res.message, 'success'); e.target.reset(); document.getElementById('emailTemplateSelect').value = 'blank'; emailSelectedStudentIds = []; renderEmailSelectedStudents(); }
     else toast(res.message || 'Could not send.', 'error');
   } finally { setBtnLoading(btn, false); }
 });
