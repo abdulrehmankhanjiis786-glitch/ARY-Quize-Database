@@ -110,7 +110,8 @@ const API_ACTIONS = {
   updateFaq: 'updateFaq',
   deleteFaq: 'deleteFaq',
   getBranding: 'getBranding',
-  updateBranding: 'updateBranding'
+  updateBranding: 'updateBranding',
+  getPlatformStats: 'getPlatformStats'
 };
 
 /* ----------------------------------------------------------------------------
@@ -235,6 +236,61 @@ function statusBadgeClass(status) {
 
 function fmtPct(n) { const v = Number(n); return isNaN(v) ? '—' : v.toFixed(2) + '%'; }
 
+/* ---------------------------------------------------------------------------
+   LIGHTWEIGHT SVG CHARTS — no external library. Used for admin analytics
+   and the student history chart view.
+--------------------------------------------------------------------------- */
+function buildBarChartSVG(title, labels, values, opts) {
+  opts = opts || {};
+  const max = opts.max || Math.max(10, ...values.map(v => v || 0));
+  const w = Math.max(360, labels.length * 70);
+  const h = 220, padL = 34, padB = 46, padT = 14, chartH = h - padT - padB;
+  const barW = (w - padL - 20) / labels.length * 0.6;
+  const step = (w - padL - 20) / labels.length;
+  const color = opts.color || 'var(--color-primary)';
+  const bars = values.map((v, i) => {
+    const bh = Math.max(2, (Math.min(v, max) / max) * chartH);
+    const x = padL + i * step + (step - barW) / 2;
+    const y = padT + chartH - bh;
+    const label = (labels[i] || '').length > 10 ? labels[i].slice(0, 9) + '…' : labels[i];
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="4" fill="${color}"><title>${labels[i]}: ${v}</title></rect>
+      <text x="${(x + barW / 2).toFixed(1)}" y="${(padT + chartH + 16).toFixed(1)}" text-anchor="middle">${label}</text>
+      <text x="${(x + barW / 2).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" font-weight="700">${opts.format ? opts.format(v) : v}</text>`;
+  }).join('');
+  const gridLines = [0, 0.5, 1].map(f => {
+    const y = padT + chartH * (1 - f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - 20}" y2="${y.toFixed(1)}" stroke="var(--color-border)" stroke-width="1"/>`;
+  }).join('');
+  return `<div class="simple-chart"><p class="simple-chart-title">${escapeHtml(title)}</p>
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="220" preserveAspectRatio="xMinYMid meet">${gridLines}${bars}</svg></div>`;
+}
+
+function buildLineChartSVG(title, labels, values, opts) {
+  opts = opts || {};
+  const max = opts.max || 100;
+  const w = Math.max(360, labels.length * 60), h = 200, padL = 34, padB = 34, padT = 14, chartW = w - padL - 20, chartH = h - padT - padB;
+  const stepX = labels.length > 1 ? chartW / (labels.length - 1) : 0;
+  const points = values.map((v, i) => {
+    const x = padL + i * stepX;
+    const y = padT + chartH - (Math.min(v, max) / max) * chartH;
+    return { x, y, v };
+  });
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${path} L${points[points.length - 1].x.toFixed(1)},${(padT + chartH).toFixed(1)} L${padL},${(padT + chartH).toFixed(1)} Z`;
+  const dots = points.map((p, i) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="var(--color-gold)"><title>${labels[i]}: ${p.v}%</title></circle>`).join('');
+  const gridLines = [0, 0.5, 1].map(f => {
+    const y = padT + chartH * (1 - f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - 20}" y2="${y.toFixed(1)}" stroke="var(--color-border)" stroke-width="1"/>`;
+  }).join('');
+  return `<div class="simple-chart"><p class="simple-chart-title">${escapeHtml(title)}</p>
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="200" preserveAspectRatio="xMinYMid meet">
+      ${gridLines}
+      <path d="${areaPath}" fill="var(--color-primary-50)"/>
+      <path d="${path}" fill="none" stroke="var(--color-primary)" stroke-width="2.5"/>
+      ${dots}
+    </svg></div>`;
+}
+
 /* ============================================================================
    SESSION MANAGEMENT
    ============================================================================ */
@@ -273,6 +329,7 @@ function hideAll() {
   document.getElementById('studentApp').classList.add('hidden');
   document.getElementById('adminApp').classList.add('hidden');
   document.getElementById('publicHeader').classList.remove('hidden');
+  document.getElementById('publicFooter').classList.remove('hidden');
 }
 
 async function navigate(name) {
@@ -282,6 +339,7 @@ async function navigate(name) {
     if (name === 'contact') renderPublicContact();
     if (name === 'gallery') renderGallery('galleryGridPublic');
     if (name === 'faqs') renderFaqs('faqListPublic');
+    if (name === 'home') renderHomepageWidgets();
     window.scrollTo(0, 0);
     closeMobileNav();
     return;
@@ -292,6 +350,7 @@ async function navigate(name) {
     if (!student) { toast('Please log in as a student first.', 'warning'); navigate('student-login'); return; }
     hideAll();
     document.getElementById('publicHeader').classList.add('hidden');
+    document.getElementById('publicFooter').classList.add('hidden');
     document.getElementById('studentApp').classList.remove('hidden');
     document.querySelectorAll('#studentSidebar .sidebar-nav a').forEach(a => a.classList.toggle('is-active', a.dataset.nav === name));
     document.getElementById('studentTopbarTitle').textContent = STUDENT_TITLES[name] || '';
@@ -326,6 +385,7 @@ async function navigate(name) {
     if (!admin) { toast('Please log in as an admin first.', 'warning'); navigate('admin-login'); return; }
     hideAll();
     document.getElementById('publicHeader').classList.add('hidden');
+    document.getElementById('publicFooter').classList.add('hidden');
     document.getElementById('adminApp').classList.remove('hidden');
     document.querySelectorAll('#adminSidebar .sidebar-nav a').forEach(a => a.classList.toggle('is-active', a.dataset.nav === name));
     document.getElementById('adminTopbarTitle').textContent = ADMIN_TITLES[name] || '';
@@ -375,6 +435,23 @@ document.addEventListener('click', (e) => {
   if (navEl) {
     e.preventDefault();
     navigate(navEl.dataset.nav);
+    return;
+  }
+  const scrollEl = e.target.closest('[data-scroll]');
+  if (scrollEl) {
+    e.preventDefault();
+    const targetId = scrollEl.dataset.scroll;
+    const filter = scrollEl.dataset.scrollFilter;
+    navigate('home').then(() => {
+      setTimeout(() => {
+        if (filter) {
+          const typeSelect = document.getElementById('homeTestTypeFilter');
+          if (typeSelect) { typeSelect.value = filter; typeSelect.dispatchEvent(new Event('change')); }
+        }
+        document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    });
+    closeMobileNav();
   }
 });
 
@@ -558,6 +635,7 @@ async function applyBranding() {
   if (b.SiteName) {
     document.title = b.SiteName + ' — Assessment Platform';
     document.getElementById('publicBrandText').textContent = b.SiteName;
+    document.getElementById('footerSiteName').textContent = b.SiteName;
   }
   if (b.LogoUrl) {
     document.getElementById('publicBrandLogo').src = b.LogoUrl;
@@ -567,7 +645,70 @@ async function applyBranding() {
   if (b.FaviconUrl) document.getElementById('faviconLink').setAttribute('href', b.FaviconUrl);
   if (b.PrimaryColor) document.documentElement.style.setProperty('--color-primary', b.PrimaryColor);
   if (b.AccentColor) document.documentElement.style.setProperty('--color-gold', b.AccentColor);
+
+  const socialEl = document.getElementById('footerSocialLinks');
+  const socialLinks = [];
+  if (b.FacebookUrl) socialLinks.push(`<a href="${escapeHtml(b.FacebookUrl)}" target="_blank" rel="noopener">Facebook</a>`);
+  if (b.InstagramUrl) socialLinks.push(`<a href="${escapeHtml(b.InstagramUrl)}" target="_blank" rel="noopener">Instagram</a>`);
+  if (b.YoutubeUrl) socialLinks.push(`<a href="${escapeHtml(b.YoutubeUrl)}" target="_blank" rel="noopener">YouTube</a>`);
+  if (b.ContactEmail) socialLinks.push(`<a href="mailto:${escapeHtml(b.ContactEmail)}">${escapeHtml(b.ContactEmail)}</a>`);
+  socialEl.innerHTML = socialLinks.join('');
 }
+document.getElementById('footerYear').textContent = new Date().getFullYear();
+
+async function renderHomepageWidgets() {
+  // Available tests (with Regular/Mock filter)
+  const testsEl = document.getElementById('homeAvailableTests');
+  const typeSelect = document.getElementById('homeTestTypeFilter');
+  const renderTests = () => {
+    const filter = typeSelect.value;
+    const list = (homeQuizzesCache || []).filter(q => !filter || q.quizType === filter);
+    if (list.length === 0) { testsEl.innerHTML = `<div class="empty-state">No tests available right now — check back soon.</div>`; return; }
+    testsEl.innerHTML = list.slice(0, 8).map(q => `
+      <div class="home-test-row">
+        <div class="home-test-row-main">
+          <strong>${escapeHtml(q.quizName)}</strong>
+          <span>${q.subject ? escapeHtml(q.subject) + ' • ' : ''}${escapeHtml(q.quizType || 'Regular')} • ${q.questionCount} questions • ${q.durationMinutes} min</span>
+        </div>
+        <span class="home-test-status">Available Now</span>
+      </div>
+    `).join('');
+  };
+  if (!homeQuizzesCache) {
+    const res = await apiCall(API_ACTIONS.getQuizzes, {});
+    homeQuizzesCache = res.success ? (res.data.quizzes || []) : [];
+  }
+  renderTests();
+  typeSelect.onchange = renderTests;
+
+  // Latest announcements (3 most recent)
+  const annEl = document.getElementById('homeAnnouncementsList');
+  const annRes = await apiCall(API_ACTIONS.getAnnouncements, {});
+  const anns = (annRes.success ? annRes.data.announcements || [] : []).slice(-3).reverse();
+  annEl.innerHTML = anns.length
+    ? anns.map(a => `<div class="announcement-item"><h4>${escapeHtml(a.Title)}</h4><p>${escapeHtml(a.Message)}</p><time>${escapeHtml(a.Date || '')}</time></div>`).join('')
+    : `<div class="empty-state">No announcements yet.</div>`;
+
+  // Platform stats
+  const statsRes = await apiCall(API_ACTIONS.getPlatformStats, {});
+  if (statsRes.success) {
+    document.getElementById('statTotalStudents').textContent = statsRes.data.totalStudents;
+    document.getElementById('statTotalQuizzes').textContent = statsRes.data.totalQuizzes;
+    document.getElementById('statTotalCertificates').textContent = statsRes.data.totalCertificates;
+  }
+
+  // Gallery preview (first 6)
+  const galRes = await apiCall(API_ACTIONS.getGallery, {});
+  const galEl = document.getElementById('homeGalleryPreview');
+  const galRows = (galRes.success ? galRes.data.gallery || [] : []).slice(0, 6);
+  galEl.innerHTML = galRows.length
+    ? galRows.map((g, i) => `<div class="gallery-card" data-idx="${i}"><img src="${escapeHtml(g.ImageUrl)}" alt="${escapeHtml(g.Title)}"><div class="gallery-card-body"><h4>${escapeHtml(g.Title)}</h4></div></div>`).join('')
+    : `<div class="empty-state">No photos yet.</div>`;
+  galEl.querySelectorAll('.gallery-card').forEach(card => {
+    card.addEventListener('click', () => openGalleryLightbox(galRows, Number(card.dataset.idx)));
+  });
+}
+let homeQuizzesCache = null;
 
 /* ============================================================================
    STUDENT: REGISTRATION
@@ -608,12 +749,12 @@ document.getElementById('studentRegisterForm').addEventListener('submit', async 
   setBtnLoading(btn, false);
 
   if (res.success) {
-    okEl.textContent = "Registration Successful — Your account is now pending Admin Approval. You'll be notified once approved.";
+    okEl.textContent = res.message || 'Registration submitted. Waiting for admin approval.';
     okEl.classList.remove('hidden');
     e.target.reset();
     regPhotoData = '';
     document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
-    toast('Registration Successful — pending Admin Approval.', 'success');
+    toast('Account created — waiting for approval.', 'success');
   } else {
     errEl.textContent = res.message || 'Registration failed.';
     errEl.classList.remove('hidden');
@@ -1000,6 +1141,7 @@ async function loadStudentResults() {
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   renderResultCards(el, res.data.results);
 }
+let studentHistoryCache = [];
 async function loadStudentHistory() {
   const s = Session.getStudent();
   const el = document.getElementById('studentHistoryTable');
@@ -1007,8 +1149,25 @@ async function loadStudentHistory() {
   const res = await apiCall(API_ACTIONS.getStudentResults, { studentId: s.studentId });
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   const sorted = (res.data.results || []).slice().sort((a, b) => new Date(b.Date + ' ' + (b.Time || '')) - new Date(a.Date + ' ' + (a.Time || '')));
+  studentHistoryCache = sorted;
   renderResultCards(el, sorted);
+  renderStudentHistoryChart();
 }
+function renderStudentHistoryChart() {
+  const chronological = studentHistoryCache.slice().reverse();
+  document.getElementById('studentHistoryChart').innerHTML = chronological.length
+    ? buildLineChartSVG('Score trend over time', chronological.map(r => r.Date), chronological.map(r => Math.round(Number(r.Percentage) * 10) / 10))
+    : `<div class="empty-state">No attempts yet.</div>`;
+}
+document.querySelectorAll('#historyViewToggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#historyViewToggle button').forEach(b => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    const isChart = btn.dataset.view === 'chart';
+    document.getElementById('studentHistoryChart').classList.toggle('hidden', !isChart);
+    document.getElementById('studentHistoryTable').classList.toggle('hidden', isChart);
+  });
+});
 
 // Each quiz result gets its own card (per the brief) with a Download
 // Screenshot button underneath it, powered by html2canvas.
@@ -1867,6 +2026,9 @@ async function loadAdminAnalytics() {
 
   if (classRes.success) {
     const rows = classRes.data.classAnalytics || [];
+    document.getElementById('classAnalyticsChart').innerHTML = rows.length
+      ? buildBarChartSVG('Average score by class', rows.map(r => r.className), rows.map(r => Math.round(r.averagePercentage * 10) / 10), { max: 100, format: v => v + '%' })
+      : '';
     classEl.innerHTML = rows.length === 0 ? `<div class="empty-state"><h4>No data yet</h4></div>` :
       `<table><thead><tr><th>Class</th><th>Students</th><th>Attempts</th><th>Average</th><th>Highest</th><th>Lowest</th></tr></thead><tbody>
         ${rows.map(r => `<tr><td>${escapeHtml(r.className)}</td><td>${r.totalStudents}</td><td>${r.totalAttempts}</td><td>${fmtPct(r.averagePercentage)}</td><td>${fmtPct(r.highestPercentage)}</td><td>${fmtPct(r.lowestPercentage)}</td></tr>`).join('')}
@@ -1875,6 +2037,9 @@ async function loadAdminAnalytics() {
 
   if (quizRes.success) {
     const rows = quizRes.data.quizAnalytics || [];
+    document.getElementById('quizAnalyticsChart').innerHTML = rows.length
+      ? buildBarChartSVG('Average score by quiz', rows.map(r => r.quizName), rows.map(r => Math.round(r.averagePercentage * 10) / 10), { max: 100, format: v => v + '%', color: 'var(--color-gold)' })
+      : '';
     quizEl.innerHTML = rows.length === 0 ? `<div class="empty-state"><h4>No data yet</h4></div>` :
       `<table><thead><tr><th>Quiz</th><th>Attempts</th><th>Average</th><th>Highest</th><th>Lowest</th></tr></thead><tbody>
         ${rows.map(r => `<tr><td>${escapeHtml(r.quizName)}</td><td>${r.totalAttempts}</td><td>${fmtPct(r.averagePercentage)}</td><td>${fmtPct(r.highestPercentage)}</td><td>${fmtPct(r.lowestPercentage)}</td></tr>`).join('')}
@@ -1894,6 +2059,9 @@ async function loadAdminAnalytics() {
       .map(s => ({ name: s.name, avg: s.total / s.count, attempts: s.count }))
       .sort((a, b) => b.avg - a.avg)
       .slice(0, 10);
+    document.getElementById('topStudentsChart').innerHTML = top.length
+      ? buildBarChartSVG('Top 10 students by average score', top.map(s => s.name), top.map(s => Math.round(s.avg * 10) / 10), { max: 100, format: v => v + '%', color: 'var(--color-success)' })
+      : '';
     topEl.innerHTML = top.length === 0 ? `<div class="empty-state"><h4>No data yet</h4></div>` :
       `<table><thead><tr><th>#</th><th>Student</th><th>Average</th><th>Attempts</th></tr></thead><tbody>
         ${top.map((s, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(s.name)}</td><td>${fmtPct(s.avg)}</td><td>${s.attempts}</td></tr>`).join('')}
@@ -3214,39 +3382,6 @@ async function loadAdminCertificates() {
 /* ---------------------------------------------------------------------------
    EMAIL CENTER
 --------------------------------------------------------------------------- */
-/* ---------------------------------------------------------------------------
-   EMAIL CENTER — ready-made templates ({name} is replaced per-recipient)
---------------------------------------------------------------------------- */
-const EMAIL_TEMPLATES = {
-  blank: { subject: '', message: '' },
-  approval: {
-    subject: 'Your ARY Quiz Bank account has been approved',
-    message: 'Hi {name},\n\nGreat news — your account has been approved. You can now log in and start attempting your assigned quizzes.\n\n— ARY Quiz Bank'
-  },
-  reminder: {
-    subject: 'Reminder: You have a quiz pending',
-    message: 'Hi {name},\n\nThis is a reminder that you have a quiz waiting to be attempted. Please log in and complete it before it expires.\n\n— ARY Quiz Bank'
-  },
-  certificate: {
-    subject: 'Your certificate is ready',
-    message: 'Hi {name},\n\nCongratulations! Your certificate is ready and available under the Certificates tab in your dashboard.\n\n— ARY Quiz Bank'
-  },
-  lowscore: {
-    subject: "Let's review your recent quiz result",
-    message: 'Hi {name},\n\nWe noticed your recent quiz score was lower than usual. Please reach out to your mentor if you need help before the next assessment.\n\n— ARY Quiz Bank'
-  },
-  announcement: {
-    subject: 'Important announcement from ARY Quiz Bank',
-    message: 'Hi {name},\n\n[Write your announcement here]\n\n— ARY Quiz Bank'
-  }
-};
-document.getElementById('emailTemplateSelect').addEventListener('change', (e) => {
-  const t = EMAIL_TEMPLATES[e.target.value];
-  if (!t) return;
-  document.getElementById('emailCenterSubject').value = t.subject;
-  document.getElementById('emailCenterMessage').value = t.message;
-});
-
 let emailSelectedStudentIds = [];
 
 function currentEmailAudiencePayload() {
@@ -3255,6 +3390,7 @@ function currentEmailAudiencePayload() {
   if (type === 'one' || type === 'multiple') payload.studentIds = emailSelectedStudentIds;
   if (type === 'class') payload.className = document.getElementById('emailClassName').value.trim();
   if (type === 'topPerformers') payload.topN = document.getElementById('emailTopN').value;
+  if (type === 'nonAttempters') payload.quizName = document.getElementById('emailQuizName').value;
   return payload;
 }
 
@@ -3265,15 +3401,47 @@ async function updateEmailAudienceCount() {
   countEl.textContent = res.success ? `${res.data.count} recipient(s) will receive this email.` : (res.message || 'Could not preview recipients.');
 }
 
-document.getElementById('emailAudienceType').addEventListener('change', (e) => {
+document.getElementById('emailAudienceType').addEventListener('change', async (e) => {
   const type = e.target.value;
   document.getElementById('emailStudentPickerField').classList.toggle('hidden', type !== 'one' && type !== 'multiple');
   document.getElementById('emailClassField').classList.toggle('hidden', type !== 'class');
   document.getElementById('emailTopNField').classList.toggle('hidden', type !== 'topPerformers');
+  document.getElementById('emailQuizField').classList.toggle('hidden', type !== 'nonAttempters');
+  if (type === 'nonAttempters') {
+    const sel = document.getElementById('emailQuizName');
+    if (!sel.options.length) {
+      const res = await apiCall(API_ACTIONS.getAllQuizzesAdmin, adminAuthParams());
+      const quizzes = res.success ? res.data.quizzes || [] : [];
+      sel.innerHTML = quizzes.map(q => `<option value="${escapeHtml(q.QuizName)}">${escapeHtml(q.QuizName)}</option>`).join('');
+    }
+  }
   updateEmailAudienceCount();
 });
+document.getElementById('emailQuizName').addEventListener('change', updateEmailAudienceCount);
 document.getElementById('emailClassName').addEventListener('change', updateEmailAudienceCount);
 document.getElementById('emailTopN').addEventListener('change', updateEmailAudienceCount);
+
+const EMAIL_TEMPLATES = {
+  testAnnouncement: {
+    subject: 'New Test Available: {quiz}',
+    message: 'Hi {name},\n\nA new test is now available on ARY Quize Bank: "{quiz}".\n\nLog in to your student dashboard and attempt it before the deadline.\n\nGood luck!\nARY Quize Bank Team'
+  },
+  topPerformer: {
+    subject: 'Congratulations on Your Top Performance! 🏆',
+    message: 'Hi {name},\n\nCongratulations! You have been recognized as a top performer on ARY Quize Bank. Your dedication and hard work are truly commendable.\n\nKeep up the excellent work — a certificate is on its way to your account.\n\nBest regards,\nARY Quize Bank Team'
+  },
+  reminderNonAttempt: {
+    subject: 'Reminder: You Haven\'t Attempted "{quiz}" Yet',
+    message: 'Hi {name},\n\nWe noticed you haven\'t attempted "{quiz}" yet. Please log in to your student dashboard and complete it as soon as possible.\n\nIf you\'re facing any issues, feel free to reach out.\n\nBest regards,\nARY Quize Bank Team'
+  }
+};
+document.getElementById('emailTemplate').addEventListener('change', (e) => {
+  const tpl = EMAIL_TEMPLATES[e.target.value];
+  if (!tpl) return;
+  const quizName = document.getElementById('emailQuizName').value || '{quiz}';
+  document.getElementById('emailCenterSubject').value = tpl.subject.replace(/\{quiz\}/g, quizName);
+  document.getElementById('emailCenterMessage').value = tpl.message.replace(/\{quiz\}/g, quizName);
+});
 
 document.getElementById('emailStudentSearchInput').addEventListener('input', async (e) => {
   const q = e.target.value.trim().toLowerCase();
@@ -3322,7 +3490,7 @@ document.getElementById('emailCenterForm').addEventListener('submit', async (e) 
   setBtnLoading(btn, true);
   try {
     const res = await apiCall(API_ACTIONS.sendBulkEmail, payload);
-    if (res.success) { toast(res.message, 'success'); e.target.reset(); document.getElementById('emailTemplateSelect').value = 'blank'; emailSelectedStudentIds = []; renderEmailSelectedStudents(); }
+    if (res.success) { toast(res.message, 'success'); e.target.reset(); emailSelectedStudentIds = []; renderEmailSelectedStudents(); }
     else toast(res.message || 'Could not send.', 'error');
   } finally { setBtnLoading(btn, false); }
 });

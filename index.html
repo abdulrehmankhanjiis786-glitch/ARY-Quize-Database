@@ -67,12 +67,14 @@
     </a>
     <nav class="public-nav">
       <a href="#" data-nav="home">Home</a>
+      <a href="#" data-scroll="test-categories">Tests</a>
+      <a href="#" data-scroll="test-categories" data-scroll-filter="Mock">Mock Tests</a>
+      <a href="#" data-nav="student-login">Results</a>
+      <a href="#" data-nav="student-login">Certificates</a>
       <a href="#" data-nav="gallery">Gallery</a>
-      <a href="#" data-nav="faqs">FAQs</a>
-      <a href="#" data-nav="contact">Contact</a>
-      <a href="#" data-nav="student-login" class="btn btn-ghost btn-sm">Student Login</a>
-      <a href="#" data-nav="admin-login" class="btn btn-outline btn-sm">Admin Login</a>
-      <a href="#" data-nav="student-register" class="btn btn-primary btn-sm">Register</a>
+      <a href="#" data-scroll="home-announcements">Announcements</a>
+      <a href="#" data-nav="student-login" class="btn btn-ghost btn-sm">Login</a>
+      <a href="#" data-nav="student-register" class="btn btn-primary btn-sm">Create Account</a>
     </nav>
     <button id="mobileNavToggle" class="mobile-nav-toggle" aria-label="Open menu">
       <span></span><span></span><span></span>
@@ -80,12 +82,14 @@
   </div>
   <div id="mobileNavPanel" class="mobile-nav-panel hidden">
     <a href="#" data-nav="home">Home</a>
+    <a href="#" data-scroll="test-categories">Tests</a>
+    <a href="#" data-scroll="test-categories" data-scroll-filter="Mock">Mock Tests</a>
+    <a href="#" data-nav="student-login">Results</a>
+    <a href="#" data-nav="student-login">Certificates</a>
     <a href="#" data-nav="gallery">Gallery</a>
-    <a href="#" data-nav="faqs">FAQs</a>
-    <a href="#" data-nav="contact">Contact</a>
-    <a href="#" data-nav="student-login">Student Login</a>
-    <a href="#" data-nav="admin-login">Admin Login</a>
-    <a href="#" data-nav="student-register">Register</a>
+    <a href="#" data-scroll="home-announcements">Announcements</a>
+    <a href="#" data-nav="student-login">Login</a>
+    <a href="#" data-nav="student-register">Create Account</a>
   </div>
 </header>
 
@@ -98,11 +102,11 @@
     <div class="hero-inner">
       <div class="hero-copy">
         <p class="eyebrow">Nursing education, assessed properly</p>
-        <h1>Quizzes that mirror how your students will actually be tested.</h1>
-        <p class="hero-sub">ARY Quize Bank gives every student a structured, timed, MCQ assessment — and gives you a clear picture of who understood the material and who needs another pass.</p>
+        <h1>Prepare Better. Perform Better.</h1>
+        <p class="hero-sub">ARY Quize Bank gives every student a structured, timed, MCQ assessment — chapter-wise practice, instant results, and a clear picture of your own progress.</p>
         <div class="hero-actions">
-          <a href="#" data-nav="student-register" class="btn btn-primary btn-lg">Register as a student</a>
-          <a href="#" data-nav="student-login" class="btn btn-outline btn-lg">I already have an account</a>
+          <a href="#" data-scroll="test-categories" class="btn btn-primary btn-lg">Explore Tests</a>
+          <a href="#" data-nav="student-register" class="btn btn-outline btn-lg">Create Account</a>
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
@@ -125,110 +129,148 @@
     </div>
   </section>
 
-  <section class="how-it-works">
+  <!-- Test categories -->
+  <section class="test-categories" id="test-categories">
     <div class="section-inner">
-      <h2>From registration to result, in four steps</h2>
-      <div class="step-row">
-        <div class="step">
-          <span class="step-num">1</span>
-          <h3>Register</h3>
-          <p>Create your account with your class and a profile photo.</p>
-        </div>
-        <div class="step-connector" aria-hidden="true"></div>
-        <div class="step">
-          <span class="step-num">2</span>
-          <h3>Admin Approval</h3>
-          <p>Your admin reviews and approves your account before you get access.</p>
-        </div>
-        <div class="step-connector" aria-hidden="true"></div>
-        <div class="step">
-          <span class="step-num">3</span>
-          <h3>Attempt Timed Quiz</h3>
-          <p>Take your assigned quiz within the time limit — one question at a time.</p>
-        </div>
-        <div class="step-connector" aria-hidden="true"></div>
-        <div class="step">
-          <span class="step-num">4</span>
-          <h3>View Results</h3>
-          <p>See your score and correct answers the moment you submit.</p>
-        </div>
-      </div>
-      <div class="approval-callout">
-        <span class="approval-callout-dot" aria-hidden="true"></span>
-        <div>
-          <strong>Registration Successful</strong> — Your account is now pending Admin Approval. You'll be notified once approved.
-        </div>
+      <h2>Find the right test for you</h2>
+      <div class="test-cat-grid">
+        <a href="#" data-nav="student-login" class="test-cat-card">
+          <span class="test-cat-icon">📘</span>
+          <h3>Subject Tests</h3>
+          <p>Full assessments organized by subject — Pharmacology, Pathophysiology, and more.</p>
+        </a>
+        <a href="#" data-nav="student-login" class="test-cat-card">
+          <span class="test-cat-icon">📖</span>
+          <h3>Chapter Tests</h3>
+          <p>Shorter quizzes focused on a single unit or chapter, right after you cover it in class.</p>
+        </a>
+        <a href="#" data-nav="student-login" class="test-cat-card">
+          <span class="test-cat-icon">🎯</span>
+          <h3>Mock Tests</h3>
+          <p>Timed, full-length practice exams that simulate the real testing experience.</p>
+        </a>
+        <a href="#" data-nav="student-login" class="test-cat-card">
+          <span class="test-cat-icon">✍️</span>
+          <h3>Practice Tests</h3>
+          <p>Low-stakes, repeatable quizzes to reinforce a topic until it sticks.</p>
+        </a>
       </div>
     </div>
   </section>
 
-  <section class="dashboard-preview">
-    <div class="section-inner dashboard-preview-inner">
-      <div class="dashboard-preview-copy">
-        <p class="eyebrow">What you'll see</p>
-        <h2>A dashboard that shows exactly where you stand.</h2>
-        <p class="hero-sub">Once approved, your dashboard brings your available quizzes, recent results and announcements together — nothing to hunt for.</p>
+  <!-- Available tests -->
+  <section class="available-tests">
+    <div class="section-inner">
+      <div class="section-head-row">
+        <h2>Available Tests</h2>
+        <select id="homeTestTypeFilter" class="home-test-filter">
+          <option value="">All Types</option>
+          <option value="Regular">Regular</option>
+          <option value="Mock">Mock</option>
+        </select>
       </div>
-      <div class="mock-dashboard" aria-hidden="true">
-        <div class="mock-dashboard-head">
-          <span class="mock-dashboard-name">Welcome back, Ayesha</span>
-          <span class="mock-dot"></span>
-        </div>
-        <div class="mock-stat-row">
-          <div class="mock-stat"><span class="mock-stat-value">3</span><span class="mock-stat-label">Available Quizzes</span></div>
-          <div class="mock-stat"><span class="mock-stat-value">87%</span><span class="mock-stat-label">Last Score</span></div>
-          <div class="mock-stat"><span class="mock-stat-value">2</span><span class="mock-stat-label">Announcements</span></div>
-        </div>
-        <div class="mock-quiz-row">
-          <span>Pharmacology — Unit 3</span>
-          <span class="mock-quiz-row-tag">Regular · 30 min</span>
-        </div>
-        <div class="mock-quiz-row">
-          <span>Pathophysiology — Unit 5</span>
-          <span class="mock-quiz-row-tag">Mock · 45 min</span>
-        </div>
-      </div>
+      <div id="homeAvailableTests" class="home-tests-list"></div>
     </div>
   </section>
 
+  <!-- Why ARY Quiz Bank -->
   <section class="features">
     <div class="section-inner">
-      <h2>Built for a real teaching workflow</h2>
+      <h2>Why ARY Quiz Bank</h2>
       <div class="feature-grid">
         <div class="feature-card">
-          <h3>Every quiz, one system</h3>
-          <p>New assessments are added as plain question tabs and appear on the platform automatically — no redeployment needed.</p>
+          <span class="feature-icon">📚</span>
+          <h3>Chapter-wise practice</h3>
+          <p>Quizzes organized by subject and chapter, so you can focus on exactly what you're studying right now.</p>
         </div>
         <div class="feature-card">
-          <h3>Approval before access</h3>
-          <p>Students register and wait for admin approval, so only your class can attempt your quizzes.</p>
+          <span class="feature-icon">⚡</span>
+          <h3>Instant results</h3>
+          <p>See your score, correct answers, and a full question-wise review the moment you submit.</p>
         </div>
         <div class="feature-card">
-          <h3>Answers stay server-side</h3>
-          <p>Correct answers are never sent to the browser before submission — scoring happens on the backend.</p>
+          <span class="feature-icon">📈</span>
+          <h3>Performance tracking</h3>
+          <p>Your history, trends, and rank against classmates — all in one dashboard.</p>
         </div>
         <div class="feature-card">
-          <h3>Results you can act on</h3>
-          <p>Per-student history, per-quiz averages, and class-level performance, in one dashboard.</p>
+          <span class="feature-icon">🏆</span>
+          <h3>Certificates</h3>
+          <p>Top performers and subject achievers earn verifiable certificates with a scannable QR code.</p>
         </div>
       </div>
+    </div>
+  </section>
+
+  <!-- Latest announcements -->
+  <section class="home-announcements" id="home-announcements">
+    <div class="section-inner">
+      <h2>Latest Announcements</h2>
+      <div id="homeAnnouncementsList" class="announcement-list"></div>
+    </div>
+  </section>
+
+  <!-- Platform stats -->
+  <section class="platform-stats">
+    <div class="section-inner">
+      <div class="stats-grid" id="homePlatformStats">
+        <div><strong id="statTotalStudents">—</strong><span>Registered Students</span></div>
+        <div><strong id="statTotalQuizzes">—</strong><span>Published Tests</span></div>
+        <div><strong id="statTotalCertificates">—</strong><span>Certificates Issued</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Gallery preview -->
+  <section class="home-gallery-preview">
+    <div class="section-inner">
+      <div class="section-head-row">
+        <h2>Gallery</h2>
+        <a href="#" data-nav="gallery" class="btn btn-outline btn-sm">View Full Gallery</a>
+      </div>
+      <div id="homeGalleryPreview" class="gallery-grid gallery-grid-preview"></div>
     </div>
   </section>
 
   <section class="cta-strip">
     <div class="section-inner cta-strip-inner">
       <div>
-        <h2>Ready to see where you stand?</h2>
-        <p>Register in a minute, get approved, and take your first timed quiz.</p>
+        <h2>Ready to take a quiz?</h2>
+        <p>Log in with your student account, or register if this is your first time.</p>
       </div>
       <div class="hero-actions">
-        <a href="#" data-nav="student-register" class="btn btn-primary btn-lg">Register as a student</a>
-        <a href="#" data-nav="student-login" class="btn btn-outline btn-lg cta-strip-outline">Student Login</a>
+        <a href="#" data-nav="student-login" class="btn btn-primary btn-lg">Student Login</a>
       </div>
     </div>
   </section>
 
 </main>
+
+<!-- ============================================================ -->
+<!-- PUBLIC FOOTER -->
+<!-- ============================================================ -->
+<footer id="publicFooter" class="public-footer">
+  <div class="public-footer-inner">
+    <div class="public-footer-brand">
+      <div class="public-footer-logo">
+        <svg viewBox="0 0 52 52" width="26" height="26">
+          <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+          <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2.4"/>
+        </svg>
+        <strong id="footerSiteName">ARY Quize Bank</strong>
+      </div>
+      <p>Prepare better. Perform better.</p>
+    </div>
+    <div class="public-footer-links">
+      <a href="#" data-nav="contact">Contact</a>
+      <a href="#" data-nav="faqs">FAQs</a>
+      <a href="#" data-nav="gallery">Gallery</a>
+      <a href="#" data-nav="admin-login">Admin Login</a>
+    </div>
+    <div class="public-footer-social" id="footerSocialLinks"></div>
+  </div>
+  <div class="public-footer-bottom">© <span id="footerYear"></span> ARY Quize Bank. All rights reserved.</div>
+</footer>
 
 <!-- ============================================================ -->
 <!-- SECTION: CONTACT (PUBLIC) -->
@@ -525,7 +567,14 @@
 
       <!-- Quiz History -->
       <section id="studentSectionHistory" class="content-section hidden">
-        <h2>Quiz History</h2>
+        <div class="section-head-row">
+          <h2>Quiz History</h2>
+          <div class="view-toggle" id="historyViewToggle">
+            <button type="button" class="is-active" data-view="list">List</button>
+            <button type="button" data-view="chart">Chart</button>
+          </div>
+        </div>
+        <div id="studentHistoryChart" class="hidden"></div>
         <div id="studentHistoryTable" class="table-wrap"></div>
       </section>
 
@@ -768,15 +817,18 @@
         <div class="content-grid-2">
           <div class="panel">
             <div class="panel-head"><h3>Class Performance</h3></div>
+            <div id="classAnalyticsChart"></div>
             <div id="classAnalyticsTable" class="table-wrap"></div>
           </div>
           <div class="panel">
             <div class="panel-head"><h3>Quiz Performance</h3></div>
+            <div id="quizAnalyticsChart"></div>
             <div id="quizAnalyticsTable" class="table-wrap"></div>
           </div>
         </div>
         <div class="panel">
           <div class="panel-head"><h3>Top Performing Students</h3></div>
+          <div id="topStudentsChart"></div>
           <div id="topStudentsTable" class="table-wrap"></div>
         </div>
         <div class="notice-box">
@@ -869,7 +921,12 @@
               <option value="topPerformers">Top Performers</option>
               <option value="eligibleCandidates">Eligible Certificate Candidates</option>
               <option value="approvedCandidates">Approved Certificate Candidates</option>
+              <option value="nonAttempters">Haven't Attempted a Test</option>
             </select>
+          </label>
+          <label class="field hidden" id="emailQuizField">
+            <span>Test</span>
+            <select id="emailQuizName"></select>
           </label>
           <label class="field hidden" id="emailStudentPickerField">
             <span>Student(s)</span>
@@ -887,14 +944,12 @@
           </label>
           <p class="field-hint" id="emailAudienceCount">—</p>
           <label class="field">
-            <span>Template</span>
-            <select id="emailTemplateSelect">
-              <option value="blank">Custom (blank)</option>
-              <option value="approval">Account Approved</option>
-              <option value="reminder">Quiz Reminder</option>
-              <option value="certificate">Certificate Ready</option>
-              <option value="lowscore">Low Score Follow-up</option>
-              <option value="announcement">General Announcement</option>
+            <span>Quick Template</span>
+            <select id="emailTemplate">
+              <option value="">— Choose a template (optional) —</option>
+              <option value="testAnnouncement">Test Announcement</option>
+              <option value="topPerformer">Top Performer Congratulations</option>
+              <option value="reminderNonAttempt">Reminder — Test Not Yet Attempted</option>
             </select>
           </label>
           <label class="field">

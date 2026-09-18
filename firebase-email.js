@@ -63,7 +63,7 @@ async function fbSendReportEmail(p) {
    EMAIL CENTER — resolve an audience selector into {email,name} recipients,
    then relay through the same Apps Script mail service.
    Audience types: 'one' | 'multiple' | 'all' | 'class' | 'topPerformers' |
-                   'eligibleCandidates' | 'approvedCandidates'
+                   'eligibleCandidates' | 'approvedCandidates' | 'nonAttempters'
 --------------------------------------------------------------------------- */
 async function fbResolveEmailAudience(p) {
   const students = await fbGetAll('students');
@@ -102,6 +102,13 @@ async function fbResolveEmailAudience(p) {
         const s = byId[r.StudentID]; if (s) out.push({ email: s.Email, name: s.Name });
       });
       return out;
+    }
+    case 'nonAttempters': {
+      if (isEmpty(p.quizName)) return [];
+      const results = await fbGetAll('results');
+      const attempted = new Set(results.filter(function (r) { return r.QuizName === p.quizName; }).map(function (r) { return r.StudentID; }));
+      return students.filter(function (s) { return s.Status === 'Approved' && !attempted.has(s.StudentID); })
+        .map(function (s) { return { email: s.Email, name: s.Name }; });
     }
     default:
       return [];

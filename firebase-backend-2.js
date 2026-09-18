@@ -427,6 +427,22 @@ async function fbGetAnnouncements(p) {
 /* ---------------------------------------------------------------------------
    CONTACTS
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   PUBLIC PLATFORM STATS (homepage trust block — no auth required)
+--------------------------------------------------------------------------- */
+async function fbGetPlatformStats(p) {
+  const students = await fbGetAll('students');
+  const settingsSnap = await db.ref('quizSettings').once('value');
+  const allSettings = settingsSnap.val() || {};
+  const publishedQuizzes = Object.keys(allSettings).filter(function (name) { return fbGetEffectiveReviewStatus(allSettings[name]) === 'Published'; });
+  const certificates = await fbGetAll('certificates');
+  return jsonResponse(true, 'OK', {
+    totalStudents: students.filter(function (s) { return s.Status === 'Approved'; }).length,
+    totalQuizzes: publishedQuizzes.length,
+    totalCertificates: certificates.length
+  });
+}
+
 async function fbGetContacts(p) {
   const rows = await fbGetAll('contacts');
   const authed = !isEmpty(p.adminEmail) && !isEmpty(p.adminPassword) && (await fbRequireAdmin(p)).ok;
@@ -695,6 +711,7 @@ Object.assign(FIREBASE_ACTIONS, {
   getAnnouncements: fbGetAnnouncements,
 
   getContacts: fbGetContacts,
+  getPlatformStats: fbGetPlatformStats,
   createContact: fbCreateContact,
   updateContact: fbUpdateContact,
   deleteContact: fbDeleteContact,
