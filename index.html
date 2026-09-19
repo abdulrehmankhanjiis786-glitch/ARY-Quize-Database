@@ -53,28 +53,30 @@
 <!-- ============================================================ -->
 <header id="publicHeader" class="public-header">
   <div class="public-header-inner">
-    <a href="#" class="brand" data-nav="home">
+    <a href="#" class="brand brand-v2" data-nav="home">
       <img id="publicBrandLogo" class="brand-logo hidden" src="" alt="">
-      <span id="publicBrandMark" class="brand-mark">
-        <svg viewBox="0 0 52 52" width="24" height="24">
-          <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
-          <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2.4"/>
-          <circle cx="42" cy="19" r="1.8" fill="#fff"/>
-          <path d="M42 19v9" stroke="#fff" stroke-width="1.8"/>
+      <span id="publicBrandMark" class="brand-mark-v2">
+        <svg viewBox="0 0 40 40" width="30" height="30">
+          <path d="M20 6 4 13l16 7 16-7-16-7Z" fill="#1E3A8A"/>
+          <path d="M10 16v6c0 2.3 4.2 4.2 10 4.2s10-1.9 10-4.2v-6" fill="none" stroke="#1E3A8A" stroke-width="1.8"/>
+          <circle cx="34" cy="14" r="1.4" fill="#1E3A8A"/>
+          <path d="M34 14v7" stroke="#1E3A8A" stroke-width="1.4"/>
         </svg>
       </span>
-      <span id="publicBrandText" class="brand-text">ARY Quize Bank</span>
+      <span class="brand-v2-text">
+        <span class="brand-v2-word"><span id="publicBrandText">ARY</span> <span class="brand-v2-sub">QUIZ BANK</span></span>
+        <span class="brand-v2-tag">Learn &nbsp;·&nbsp; Practice &nbsp;·&nbsp; Succeed</span>
+      </span>
     </a>
     <nav class="public-nav">
       <a href="#" data-nav="home">Home</a>
-      <a href="#" data-scroll="test-categories">Tests</a>
-      <a href="#" data-scroll="test-categories" data-scroll-filter="Mock">Mock Tests</a>
-      <a href="#" data-nav="student-login">Results</a>
+      <a href="#" data-scroll="test-categories">Quizzes</a>
+      <a href="#" data-nav="student-login">Leaderboard</a>
       <a href="#" data-nav="student-login">Certificates</a>
-      <a href="#" data-nav="gallery">Gallery</a>
       <a href="#" data-scroll="home-announcements">Announcements</a>
-      <a href="#" data-nav="student-login" class="btn btn-ghost btn-sm">Login</a>
-      <a href="#" data-nav="student-register" class="btn btn-primary btn-sm">Create Account</a>
+      <a href="#" data-nav="contact">Contact</a>
+      <a href="#" data-nav="student-login" class="btn btn-outline btn-pill btn-sm">👤 Login</a>
+      <a href="#" data-nav="student-register" class="btn btn-primary btn-pill btn-sm">+ Register</a>
     </nav>
     <button id="mobileNavToggle" class="mobile-nav-toggle" aria-label="Open menu">
       <span></span><span></span><span></span>
@@ -82,14 +84,13 @@
   </div>
   <div id="mobileNavPanel" class="mobile-nav-panel hidden">
     <a href="#" data-nav="home">Home</a>
-    <a href="#" data-scroll="test-categories">Tests</a>
-    <a href="#" data-scroll="test-categories" data-scroll-filter="Mock">Mock Tests</a>
-    <a href="#" data-nav="student-login">Results</a>
+    <a href="#" data-scroll="test-categories">Quizzes</a>
+    <a href="#" data-nav="student-login">Leaderboard</a>
     <a href="#" data-nav="student-login">Certificates</a>
-    <a href="#" data-nav="gallery">Gallery</a>
     <a href="#" data-scroll="home-announcements">Announcements</a>
+    <a href="#" data-nav="contact">Contact</a>
     <a href="#" data-nav="student-login">Login</a>
-    <a href="#" data-nav="student-register">Create Account</a>
+    <a href="#" data-nav="student-register">Register</a>
   </div>
 </header>
 
@@ -98,33 +99,107 @@
 <!-- ============================================================ -->
 <main id="section-home" class="app-section public-section">
 
-  <section class="hero">
+  <section class="hero hero-v2">
     <div class="hero-inner">
       <div class="hero-copy">
-        <p class="eyebrow">Nursing education, assessed properly</p>
-        <h1>Prepare Better. Perform Better.</h1>
-        <p class="hero-sub">ARY Quize Bank gives every student a structured, timed, MCQ assessment — chapter-wise practice, instant results, and a clear picture of your own progress.</p>
+        <p class="hero-badge">Your Study Partner</p>
+        <h1><span class="hero-line-dark">Prepare Smarter,</span><br><span class="hero-line-accent">Score Higher!</span></h1>
+        <p class="hero-sub">ARY Quiz Bank helps nursing students build their knowledge with high-quality quizzes, subject-wise practice tests and instant results. Learn at your pace, track your progress and achieve your goals.</p>
         <div class="hero-actions">
-          <a href="#" data-scroll="test-categories" class="btn btn-primary btn-lg">Explore Tests</a>
-          <a href="#" data-nav="student-register" class="btn btn-outline btn-lg">Create Account</a>
+          <a href="#" data-scroll="test-categories" class="btn btn-primary btn-lg">▶ Start Quiz Now</a>
+          <a href="#" data-scroll="test-categories" class="btn btn-outline btn-lg">Explore Quizzes</a>
         </div>
       </div>
       <div class="hero-visual" aria-hidden="true">
-        <div class="mock-quiz-card">
-          <div class="mock-quiz-card-head">
-            <span class="mock-dot"></span>
-            <span class="mock-quiz-title">Pathophysiology — Unit 5</span>
-            <span class="mock-timer">08:42</span>
+        <div class="app-preview">
+          <div class="app-preview-topbar">
+            <span class="app-preview-brand">ARY <b>QUIZ BANK</b></span>
+            <span class="app-preview-dots">●●●</span>
           </div>
-          <p class="mock-question">Which finding is most consistent with hypovolemic shock?</p>
-          <div class="mock-options">
-            <div class="mock-option is-selected"><span>A</span>Tachycardia and cool extremities</div>
-            <div class="mock-option"><span>B</span>Bradycardia and warm skin</div>
-            <div class="mock-option"><span>C</span>Bounding peripheral pulses</div>
-            <div class="mock-option"><span>D</span>Elevated urine output</div>
+          <div class="app-preview-body">
+            <div class="app-preview-sidebar">
+              <span class="is-active">⌂ Home</span>
+              <span>📝 Quizzes</span>
+              <span>📊 Results</span>
+              <span>🏆 Leaderboard</span>
+              <span>🎓 Certificates</span>
+              <span>👤 Profile</span>
+            </div>
+            <div class="app-preview-main">
+              <div class="app-preview-welcome">
+                <div>
+                  <strong>Welcome to</strong>
+                  <span>ARY Quiz Bank</span>
+                  <em>Practice. Improve. Excel.</em>
+                  <a class="btn btn-primary btn-sm">Start Quiz →</a>
+                </div>
+                <div class="app-preview-ring">
+                  <svg viewBox="0 0 100 100" width="76" height="76">
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#E3E9F7" stroke-width="10"/>
+                    <circle cx="50" cy="50" r="42" fill="none" stroke="#1E3A8A" stroke-width="10" stroke-linecap="round"
+                      stroke-dasharray="264" stroke-dashoffset="58" transform="rotate(-90 50 50)"/>
+                    <text x="50" y="47" text-anchor="middle" font-size="20" font-weight="800" fill="#14235E">78%</text>
+                    <text x="50" y="62" text-anchor="middle" font-size="7" fill="#64748B">Progress</text>
+                  </svg>
+                </div>
+              </div>
+              <div class="app-preview-chips">
+                <span>💊 Pharmacology</span>
+                <span>🩺 Health Assessment</span>
+                <span>🧠 Pathophysiology</span>
+                <span>🎓 MSN</span>
+              </div>
+            </div>
           </div>
-          <div class="mock-progress"><div class="mock-progress-bar" style="width:64%"></div></div>
         </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Feature icon strip -->
+  <section class="feature-strip">
+    <div class="section-inner">
+      <div class="feature-strip-grid">
+        <div class="feature-strip-card"><span class="feature-strip-icon">📋</span><h3>Subject-Wise Quizzes</h3><p>All key subjects, well-organized and up to date.</p></div>
+        <div class="feature-strip-card"><span class="feature-strip-icon">⏱️</span><h3>Timed Tests</h3><p>Build speed and accuracy with a real exam environment.</p></div>
+        <div class="feature-strip-card"><span class="feature-strip-icon">📈</span><h3>Instant Results</h3><p>Know your score, track progress and improve.</p></div>
+        <div class="feature-strip-card"><span class="feature-strip-icon">🎓</span><h3>Certificates</h3><p>Get verified certificates for your performance.</p></div>
+        <div class="feature-strip-card"><span class="feature-strip-icon">👥</span><h3>Leaderboards</h3><p>See where you stand among other students.</p></div>
+        <div class="feature-strip-card"><span class="feature-strip-icon">📱</span><h3>Mobile Friendly</h3><p>Study anywhere, anytime.</p></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Trusted-by stats band -->
+  <section class="stats-band">
+    <div class="section-inner stats-band-inner">
+      <div class="stats-band-copy">
+        <p class="stats-band-eyebrow">Trusted by Students</p>
+        <h2>Join Thousands of Future Healthcare Professionals</h2>
+        <p>Be a part of ARY Quiz Bank and take the next step towards your dream.</p>
+      </div>
+      <div class="stats-band-numbers" id="homeStatsBand">
+        <div><span class="stats-band-icon">👥</span><strong id="bandTotalStudents">—</strong><span>Active Students</span></div>
+        <div><span class="stats-band-icon">📖</span><strong id="bandTotalQuizzes">—</strong><span>Quizzes Available</span></div>
+        <div><span class="stats-band-icon">🎓</span><strong id="bandTotalCertificates">—</strong><span>Certificates Issued</span></div>
+        <div><span class="stats-band-icon">⭐</span><strong>4.9/5</strong><span>Student Satisfaction</span></div>
+      </div>
+    </div>
+  </section>
+
+  <!-- How it works -->
+  <section class="how-it-works">
+    <div class="section-inner">
+      <h2>How It Works</h2>
+      <p class="section-sub-center">Just a few simple steps to get started.</p>
+      <div class="how-steps">
+        <div class="how-step"><span class="how-step-num">1</span><div><strong>Register</strong><p>Create your account in seconds.</p></div></div>
+        <span class="how-step-arrow">›</span>
+        <div class="how-step"><span class="how-step-num">2</span><div><strong>Take Quiz</strong><p>Choose a subject and start practicing.</p></div></div>
+        <span class="how-step-arrow">›</span>
+        <div class="how-step"><span class="how-step-num">3</span><div><strong>Get Results</strong><p>See your score and track your progress.</p></div></div>
+        <span class="how-step-arrow">›</span>
+        <div class="how-step"><span class="how-step-num">4</span><div><strong>Download Certificate</strong><p>Achieve your goal and get your certificate.</p></div></div>
       </div>
     </div>
   </section>
@@ -173,51 +248,11 @@
     </div>
   </section>
 
-  <!-- Why ARY Quiz Bank -->
-  <section class="features">
-    <div class="section-inner">
-      <h2>Why ARY Quiz Bank</h2>
-      <div class="feature-grid">
-        <div class="feature-card">
-          <span class="feature-icon">📚</span>
-          <h3>Chapter-wise practice</h3>
-          <p>Quizzes organized by subject and chapter, so you can focus on exactly what you're studying right now.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">⚡</span>
-          <h3>Instant results</h3>
-          <p>See your score, correct answers, and a full question-wise review the moment you submit.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">📈</span>
-          <h3>Performance tracking</h3>
-          <p>Your history, trends, and rank against classmates — all in one dashboard.</p>
-        </div>
-        <div class="feature-card">
-          <span class="feature-icon">🏆</span>
-          <h3>Certificates</h3>
-          <p>Top performers and subject achievers earn verifiable certificates with a scannable QR code.</p>
-        </div>
-      </div>
-    </div>
-  </section>
-
   <!-- Latest announcements -->
   <section class="home-announcements" id="home-announcements">
     <div class="section-inner">
       <h2>Latest Announcements</h2>
       <div id="homeAnnouncementsList" class="announcement-list"></div>
-    </div>
-  </section>
-
-  <!-- Platform stats -->
-  <section class="platform-stats">
-    <div class="section-inner">
-      <div class="stats-grid" id="homePlatformStats">
-        <div><strong id="statTotalStudents">—</strong><span>Registered Students</span></div>
-        <div><strong id="statTotalQuizzes">—</strong><span>Published Tests</span></div>
-        <div><strong id="statTotalCertificates">—</strong><span>Certificates Issued</span></div>
-      </div>
     </div>
   </section>
 

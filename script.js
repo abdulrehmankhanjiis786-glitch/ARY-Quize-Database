@@ -692,9 +692,9 @@ async function renderHomepageWidgets() {
   // Platform stats
   const statsRes = await apiCall(API_ACTIONS.getPlatformStats, {});
   if (statsRes.success) {
-    document.getElementById('statTotalStudents').textContent = statsRes.data.totalStudents;
-    document.getElementById('statTotalQuizzes').textContent = statsRes.data.totalQuizzes;
-    document.getElementById('statTotalCertificates').textContent = statsRes.data.totalCertificates;
+    document.getElementById('bandTotalStudents').textContent = statsRes.data.totalStudents + '+';
+    document.getElementById('bandTotalQuizzes').textContent = statsRes.data.totalQuizzes + '+';
+    document.getElementById('bandTotalCertificates').textContent = statsRes.data.totalCertificates + '+';
   }
 
   // Gallery preview (first 6)
