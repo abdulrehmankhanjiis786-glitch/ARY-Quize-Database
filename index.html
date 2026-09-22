@@ -238,11 +238,11 @@
     <div class="section-inner">
       <div class="section-head-row">
         <h2>Available Tests</h2>
-        <select id="homeTestTypeFilter" class="home-test-filter">
-          <option value="">All Types</option>
-          <option value="Regular">Regular</option>
-          <option value="Mock">Mock</option>
-        </select>
+        <div class="filter-pill-group" id="homeTestTypeFilter" data-value="">
+          <button type="button" class="is-active" data-filter-value="">All Types</button>
+          <button type="button" data-filter-value="Regular">Regular</button>
+          <button type="button" data-filter-value="Mock">Mock</button>
+        </div>
       </div>
       <div id="homeAvailableTests" class="home-tests-list"></div>
     </div>
@@ -356,6 +356,7 @@
         <span>Password</span>
         <input type="password" id="loginPassword" required autocomplete="current-password">
       </label>
+      <p class="auth-forgot"><a href="#" data-forgot-password="student">Forgot password?</a></p>
       <div id="studentLoginError" class="form-error hidden"></div>
       <button type="submit" class="btn btn-primary btn-block" id="studentLoginBtn">
         <span class="btn-label">Log In</span>
@@ -447,6 +448,7 @@
         <span>Password</span>
         <input type="password" id="adminLoginPassword" required autocomplete="current-password">
       </label>
+      <p class="auth-forgot"><a href="#" data-forgot-password="admin">Forgot password?</a></p>
       <div id="adminLoginError" class="form-error hidden"></div>
       <button type="submit" class="btn btn-primary btn-block" id="adminLoginBtn">
         <span class="btn-label">Log In</span>
@@ -542,14 +544,14 @@
           <button class="btn btn-outline btn-sm" id="refreshQuizzesBtn">Refresh</button>
         </div>
         <div class="quiz-filter-row">
-          <select id="quizFilterSubject">
+          <select id="quizFilterSubject" class="filter-select">
             <option value="">All Subjects</option>
           </select>
-          <select id="quizFilterType">
-            <option value="">All Types</option>
-            <option value="Regular">Regular</option>
-            <option value="Mock">Mock</option>
-          </select>
+          <div class="filter-pill-group" id="quizFilterType" data-value="">
+            <button type="button" class="is-active" data-filter-value="">All Types</button>
+            <button type="button" data-filter-value="Regular">Regular</button>
+            <button type="button" data-filter-value="Mock">Mock</button>
+          </div>
         </div>
         <div id="studentQuizGrid" class="quiz-grid"></div>
       </section>
@@ -1363,6 +1365,71 @@
     <div class="empty-state">Checking certificate…</div>
   </div>
 </main>
+
+<!-- ============================================================ -->
+<!-- FORGOT PASSWORD MODAL — 3-step OTP flow -->
+<!-- ============================================================ -->
+<div id="forgotPasswordModal" class="modal-backdrop hidden">
+  <div class="modal">
+
+    <!-- Step 1: enter email -->
+    <div id="fpStepEmail">
+      <h3>Reset Your Password</h3>
+      <p class="section-sub">Enter your registered email and we'll send you a 6-digit code.</p>
+      <form id="forgotPasswordForm">
+        <label class="field">
+          <span>Email</span>
+          <input type="email" id="forgotPasswordEmail" required>
+        </label>
+        <div id="forgotPasswordError" class="form-error hidden"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="forgotPasswordCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="forgotPasswordSendBtn">Send Code</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Step 2: enter OTP -->
+    <div id="fpStepOtp" class="hidden">
+      <h3>Enter Verification Code</h3>
+      <p class="section-sub">We sent a 6-digit code to <strong id="fpOtpEmailLabel"></strong>. It expires in 10 minutes.</p>
+      <form id="fpOtpForm">
+        <label class="field">
+          <span>6-Digit Code</span>
+          <input type="text" id="fpOtpInput" inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" class="otp-input" required>
+        </label>
+        <div id="fpOtpError" class="form-error hidden"></div>
+        <p class="fp-resend-row"><button type="button" class="btn-link" id="fpResendBtn">Resend code</button></p>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="fpOtpCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="fpOtpVerifyBtn">Verify Code</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Step 3: set new password -->
+    <div id="fpStepPassword" class="hidden">
+      <h3>Set a New Password</h3>
+      <p class="section-sub">Code verified — choose a new password.</p>
+      <form id="fpPasswordForm">
+        <label class="field">
+          <span>New Password</span>
+          <input type="password" id="fpNewPassword" minlength="6" required autocomplete="new-password">
+        </label>
+        <label class="field">
+          <span>Confirm New Password</span>
+          <input type="password" id="fpConfirmPassword" minlength="6" required autocomplete="new-password">
+        </label>
+        <div id="fpPasswordError" class="form-error hidden"></div>
+        <div class="modal-actions">
+          <button type="button" class="btn btn-ghost" id="fpPasswordCancelBtn">Cancel</button>
+          <button type="submit" class="btn btn-primary" id="fpPasswordSaveBtn">Update Password</button>
+        </div>
+      </form>
+    </div>
+
+  </div>
+</div>
 
 <!-- ============================================================ -->
 <!-- CONTACT EDITOR MODAL -->

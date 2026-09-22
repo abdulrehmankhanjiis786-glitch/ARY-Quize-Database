@@ -155,6 +155,7 @@ function handleRequest(e) {
       sendResultEmail: apiSendResultEmail,
       sendReportEmail: apiSendReportEmail,
       sendBulkEmail: apiSendBulkEmail,
+      sendPlainEmail: apiSendPlainEmail,
 
       // ---- Certificates (NEW v4) ----
       issueCertificate: apiIssueCertificate,
@@ -1355,6 +1356,21 @@ var EMAIL_RELAY_KEY = 'ARY-QB-2026-CHANGE-ME';
 function requireRelayKey(p) {
   if (String(p.relayKey || '') !== EMAIL_RELAY_KEY) return { ok: false, response: jsonResponse(false, 'Unauthorized.') };
   return { ok: true };
+}
+
+// Sends a simple plain-text email to a single address. Used for password
+// reset links and other one-off transactional emails that don't need an
+// attachment.
+function apiSendPlainEmail(p) {
+  var auth = requireRelayKey(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['to', 'subject', 'message']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  try {
+    MailApp.sendEmail({ to: p.to, subject: p.subject, body: p.message });
+    return jsonResponse(true, 'Emailed to ' + p.to + '.');
+  } catch (err) {
+    return jsonResponse(false, 'Could not send email: ' + err.message);
+  }
 }
 
 // Emails an image (e.g. a result/leaderboard screenshot) to a student's

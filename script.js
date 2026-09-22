@@ -17,6 +17,10 @@ const API_ACTIONS = {
   registerStudent: 'registerStudent',
   studentLogin: 'studentLogin',
   studentLogout: 'studentLogout',
+  requestPasswordReset: 'requestPasswordReset',
+  resendOtp: 'resendOtp',
+  verifyOtp: 'verifyOtp',
+  completePasswordReset: 'completePasswordReset',
   getStudentProfile: 'getStudentProfile',
   updateStudentProfile: 'updateStudentProfile',
   getQuizzes: 'getQuizzes',
@@ -236,6 +240,22 @@ function statusBadgeClass(status) {
 
 function fmtPct(n) { const v = Number(n); return isNaN(v) ? '—' : v.toFixed(2) + '%'; }
 
+// Wires a .filter-pill-group container: clicking a button sets the
+// container's data-value, toggles the active state, and runs onChange.
+function initFilterPillGroup(containerId, onChange) {
+  const group = document.getElementById(containerId);
+  if (!group || group.dataset.wired) return;
+  group.dataset.wired = 'true';
+  group.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      group.querySelectorAll('button').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      group.dataset.value = btn.dataset.filterValue || '';
+      onChange(group.dataset.value);
+    });
+  });
+}
+
 /* ---------------------------------------------------------------------------
    LIGHTWEIGHT SVG CHARTS — no external library. Used for admin analytics
    and the student history chart view.
@@ -445,8 +465,9 @@ document.addEventListener('click', (e) => {
     navigate('home').then(() => {
       setTimeout(() => {
         if (filter) {
-          const typeSelect = document.getElementById('homeTestTypeFilter');
-          if (typeSelect) { typeSelect.value = filter; typeSelect.dispatchEvent(new Event('change')); }
+          const group = document.getElementById('homeTestTypeFilter');
+          const btn = group?.querySelector(`button[data-filter-value="${filter}"]`);
+          if (btn) btn.click();
         }
         document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
       }, 60);
@@ -659,9 +680,8 @@ document.getElementById('footerYear').textContent = new Date().getFullYear();
 async function renderHomepageWidgets() {
   // Available tests (with Regular/Mock filter)
   const testsEl = document.getElementById('homeAvailableTests');
-  const typeSelect = document.getElementById('homeTestTypeFilter');
   const renderTests = () => {
-    const filter = typeSelect.value;
+    const filter = document.getElementById('homeTestTypeFilter').dataset.value || '';
     const list = (homeQuizzesCache || []).filter(q => !filter || q.quizType === filter);
     if (list.length === 0) { testsEl.innerHTML = `<div class="empty-state">No tests available right now — check back soon.</div>`; return; }
     testsEl.innerHTML = list.slice(0, 8).map(q => `
@@ -679,7 +699,7 @@ async function renderHomepageWidgets() {
     homeQuizzesCache = res.success ? (res.data.quizzes || []) : [];
   }
   renderTests();
-  typeSelect.onchange = renderTests;
+  initFilterPillGroup('homeTestTypeFilter', renderTests);
 
   // Latest announcements (3 most recent)
   const annEl = document.getElementById('homeAnnouncementsList');
@@ -874,7 +894,7 @@ async function loadStudentQuizzes() {
 function renderStudentQuizGrid() {
   const grid = document.getElementById('studentQuizGrid');
   const subjectFilter = document.getElementById('quizFilterSubject').value;
-  const typeFilter = document.getElementById('quizFilterType').value;
+  const typeFilter = document.getElementById('quizFilterType').dataset.value || '';
   const quizzes = studentQuizzesCache.filter(q =>
     (!subjectFilter || q.subject === subjectFilter) && (!typeFilter || q.quizType === typeFilter)
   );
@@ -900,7 +920,7 @@ function renderStudentQuizGrid() {
   });
 }
 document.getElementById('quizFilterSubject').addEventListener('change', renderStudentQuizGrid);
-document.getElementById('quizFilterType').addEventListener('change', renderStudentQuizGrid);
+initFilterPillGroup('quizFilterType', renderStudentQuizGrid);
 document.getElementById('refreshQuizzesBtn').addEventListener('click', loadStudentQuizzes);
 
 /* ============================================================================
@@ -3701,6 +3721,109 @@ async function renderVerifyPage(certificateId) {
     <p class="section-sub" style="margin-top:14px;">${escapeHtml(c.AchievementText || '')}</p>
   `;
 }
+
+/* ---------------------------------------------------------------------------
+   FORGOT PASSWORD — 6-digit OTP flow (email -> OTP -> new password), shared
+   by both Student and Admin login. All three steps live in one modal.
+--------------------------------------------------------------------------- */
+let fpResetId = '';
+let fpRole = 'student';
+let fpResendTimer = null;
+
+function fpShowStep(step) {
+  ['fpStepEmail', 'fpStepOtp', 'fpStepPassword'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById(step).classList.remove('hidden');
+}
+function fpStartResendCooldown() {
+  const btn = document.getElementById('fpResendBtn');
+  let seconds = 45;
+  btn.disabled = true;
+  const tick = () => {
+    btn.textContent = seconds > 0 ? `Resend code (${seconds}s)` : 'Resend code';
+    if (seconds <= 0) { btn.disabled = false; clearInterval(fpResendTimer); }
+    seconds--;
+  };
+  tick();
+  if (fpResendTimer) clearInterval(fpResendTimer);
+  fpResendTimer = setInterval(tick, 1000);
+}
+
+document.querySelectorAll('[data-forgot-password]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    fpRole = link.dataset.forgotPassword;
+    fpResetId = '';
+    document.getElementById('forgotPasswordForm').reset();
+    document.getElementById('fpOtpForm').reset();
+    document.getElementById('fpPasswordForm').reset();
+    ['forgotPasswordError', 'fpOtpError', 'fpPasswordError'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    fpShowStep('fpStepEmail');
+    openModal('forgotPasswordModal');
+  });
+});
+document.getElementById('forgotPasswordCancelBtn').addEventListener('click', () => { clearInterval(fpResendTimer); closeModal('forgotPasswordModal'); });
+document.getElementById('fpOtpCancelBtn').addEventListener('click', () => { clearInterval(fpResendTimer); closeModal('forgotPasswordModal'); });
+document.getElementById('fpPasswordCancelBtn').addEventListener('click', () => { clearInterval(fpResendTimer); closeModal('forgotPasswordModal'); });
+
+// Step 1: email -> send OTP
+document.getElementById('forgotPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('forgotPasswordSendBtn');
+  const errEl = document.getElementById('forgotPasswordError');
+  errEl.classList.add('hidden');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.requestPasswordReset, {
+    email: document.getElementById('forgotPasswordEmail').value.trim(),
+    role: fpRole
+  });
+  setBtnLoading(btn, false);
+  if (!res.success) { errEl.textContent = res.message || 'Something went wrong.'; errEl.classList.remove('hidden'); return; }
+  fpResetId = res.data.resetId;
+  document.getElementById('fpOtpEmailLabel').textContent = document.getElementById('forgotPasswordEmail').value.trim();
+  document.getElementById('fpOtpInput').value = '';
+  fpShowStep('fpStepOtp');
+  fpStartResendCooldown();
+});
+
+// Step 2: verify OTP
+document.getElementById('fpOtpForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('fpOtpVerifyBtn');
+  const errEl = document.getElementById('fpOtpError');
+  errEl.classList.add('hidden');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.verifyOtp, { resetId: fpResetId, otp: document.getElementById('fpOtpInput').value.trim() });
+  setBtnLoading(btn, false);
+  if (!res.success) { errEl.textContent = res.message || 'Incorrect code.'; errEl.classList.remove('hidden'); return; }
+  clearInterval(fpResendTimer);
+  fpShowStep('fpStepPassword');
+});
+document.getElementById('fpResendBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('fpResendBtn');
+  const errEl = document.getElementById('fpOtpError');
+  errEl.classList.add('hidden');
+  const res = await apiCall(API_ACTIONS.resendOtp, { resetId: fpResetId });
+  if (!res.success) { errEl.textContent = res.message || 'Could not resend code.'; errEl.classList.remove('hidden'); return; }
+  toast('A new code has been sent.', 'success');
+  fpStartResendCooldown();
+});
+
+// Step 3: set new password
+document.getElementById('fpPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('fpPasswordError');
+  errEl.classList.add('hidden');
+  const pw = document.getElementById('fpNewPassword').value;
+  const pw2 = document.getElementById('fpConfirmPassword').value;
+  if (pw !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
+  const btn = document.getElementById('fpPasswordSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.completePasswordReset, { resetId: fpResetId, newPassword: pw });
+  setBtnLoading(btn, false);
+  if (!res.success) { errEl.textContent = res.message || 'Something went wrong.'; errEl.classList.remove('hidden'); return; }
+  closeModal('forgotPasswordModal');
+  toast('Password updated — you can log in now.', 'success');
+});
 
 (function init() {
   document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
