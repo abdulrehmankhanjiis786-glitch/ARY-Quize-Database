@@ -113,6 +113,137 @@ async function fbStudentLogin(p) {
 
 async function fbStudentLogout(p) { return jsonResponse(true, 'Logged out.'); }
 
+/* ---------------------------------------------------------------------------
+   PASSWORD RESET — OTP-based, works for both students and admins.
+
+   Flow: requestPasswordReset (email+role) -> emails a 6-digit code, returns
+   an opaque resetId that ties the rest of the flow together (the client
+   never needs to re-send the email) -> verifyOtp (resetId+otp) -> marks the
+   record verified -> completePasswordReset (resetId+newPassword) -> updates
+   the account and deletes the record.
+
+   Security notes:
+   - The response never reveals whether the email exists — a resetId is
+     always returned, and a request against an unknown email creates an
+     inert record so verifyOtp behaves identically either way.
+   - OTP expires after 10 minutes.
+   - Max 5 incorrect OTP attempts per resetId, then it's locked and a fresh
+     request is required.
+   - Resend has a 45-second cooldown and also rotates the code.
+   - completePasswordReset only succeeds if that resetId was already OTP-
+     verified in this same flow.
+   IMPORTANT CAVEAT: this project's "backend" is plain client-side JS
+   talking directly to the Firebase Realtime Database (there is no real
+   server). That means this logic is a strong UX-level gate, but a
+   technically sophisticated user could still call the Firebase REST API
+   directly and write to /passwordResets or /students /admins themselves.
+   Real server-side enforcement needs Firebase Security Rules that lock
+   down direct writes to those paths (e.g. only allow a Cloud Function to
+   write verified:true or a new Password) — that's outside what a static
+   HTML/JS site can enforce on its own.
+--------------------------------------------------------------------------- */
+function fbGenerateOpaqueId() {
+  var bytes = new Uint8Array(24);
+  (self.crypto || window.crypto).getRandomValues(bytes);
+  return Array.from(bytes, function (b) { return b.toString(16).padStart(2, '0'); }).join('');
+}
+function fbGenerateOtp() {
+  var arr = new Uint32Array(1);
+  (self.crypto || window.crypto).getRandomValues(arr);
+  return String(100000 + (arr[0] % 900000)); // 6 digits, 100000–999999
+}
+
+async function fbRequestPasswordReset(p) {
+  var missing = validateRequired(p, ['email', 'role']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  const role = p.role === 'admin' ? 'admin' : 'student';
+  const collection = role === 'admin' ? 'admins' : 'students';
+  const rows = await fbGetAll(collection);
+  const match = rows.find(function (r) { return String(r.Email).toLowerCase() === String(p.email).toLowerCase(); });
+
+  const resetId = fbGenerateOpaqueId();
+  const otp = fbGenerateOtp();
+  const now = Date.now();
+  await db.ref('passwordResets/' + resetId).set({
+    userId: match ? (role === 'admin' ? match.AdminID : match.StudentID) : '',
+    role: role, email: p.email, valid: !!match,
+    otp: otp, attempts: 0, verified: false,
+    createdAt: now, expiresAt: now + 10 * 60 * 1000, lastSentAt: now
+  });
+
+  if (match) {
+    const emailRes = await fbRelayCall('sendPlainEmail', {
+      to: match.Email,
+      subject: 'Your ARY Quize Bank password reset code',
+      message: 'Hi ' + (match.Name || '') + ',\n\nYour password reset code is: ' + otp + '\n\nThis code expires in 10 minutes. If you did not request this, you can safely ignore this email.\n\n— ARY Quize Bank'
+    });
+    if (!emailRes.success) return jsonResponse(false, 'Could not send the reset email: ' + emailRes.message);
+  }
+  // Always the same generic message and response shape, whether or not the email was found.
+  return jsonResponse(true, 'If an account exists with that email, a 6-digit code has been sent.', { resetId: resetId });
+}
+
+async function fbResendOtp(p) {
+  var missing = validateRequired(p, ['resetId']);
+  if (missing.length) return jsonResponse(false, 'Missing resetId.');
+  const ref = db.ref('passwordResets/' + p.resetId);
+  const snap = await ref.once('value');
+  const rec = snap.val();
+  if (!rec) return jsonResponse(false, 'This session has expired. Please start over.');
+  const now = Date.now();
+  if (now - rec.lastSentAt < 45 * 1000) {
+    return jsonResponse(false, 'Please wait ' + Math.ceil((45 * 1000 - (now - rec.lastSentAt)) / 1000) + 's before requesting another code.');
+  }
+  const otp = fbGenerateOtp();
+  await ref.update({ otp: otp, attempts: 0, verified: false, expiresAt: now + 10 * 60 * 1000, lastSentAt: now });
+  if (rec.valid) {
+    const emailRes = await fbRelayCall('sendPlainEmail', {
+      to: rec.email,
+      subject: 'Your ARY Quize Bank password reset code',
+      message: 'Your new password reset code is: ' + otp + '\n\nThis code expires in 10 minutes.\n\n— ARY Quize Bank'
+    });
+    if (!emailRes.success) return jsonResponse(false, 'Could not send the reset email: ' + emailRes.message);
+  }
+  return jsonResponse(true, 'A new code has been sent if that email is registered.');
+}
+
+async function fbVerifyOtp(p) {
+  var missing = validateRequired(p, ['resetId', 'otp']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  const ref = db.ref('passwordResets/' + p.resetId);
+  const snap = await ref.once('value');
+  const rec = snap.val();
+  if (!rec) return jsonResponse(false, 'This session has expired. Please start over.');
+  if (Date.now() > rec.expiresAt) return jsonResponse(false, 'This code has expired. Please request a new one.');
+  if (rec.attempts >= 5) return jsonResponse(false, 'Too many incorrect attempts. Please request a new code.');
+
+  if (!rec.valid || String(p.otp).trim() !== rec.otp) {
+    const attempts = (rec.attempts || 0) + 1;
+    await ref.update({ attempts: attempts });
+    const remaining = 5 - attempts;
+    if (remaining <= 0) return jsonResponse(false, 'Too many incorrect attempts. Please request a new code.');
+    return jsonResponse(false, 'Incorrect code. ' + remaining + ' attempt(s) remaining.');
+  }
+  await ref.update({ verified: true });
+  return jsonResponse(true, 'Code verified.');
+}
+
+async function fbCompletePasswordReset(p) {
+  var missing = validateRequired(p, ['resetId', 'newPassword']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  if (String(p.newPassword).length < 6) return jsonResponse(false, 'Password must be at least 6 characters.');
+
+  const ref = db.ref('passwordResets/' + p.resetId);
+  const snap = await ref.once('value');
+  const rec = snap.val();
+  if (!rec || !rec.verified || Date.now() > rec.expiresAt) return jsonResponse(false, 'This session is invalid or has expired. Please start over.');
+
+  const collection = rec.role === 'admin' ? 'admins' : 'students';
+  await db.ref(collection + '/' + rec.userId).update({ Password: p.newPassword });
+  await ref.remove();
+  return jsonResponse(true, 'Password updated. You can now log in with your new password.');
+}
+
 async function fbGetStudentProfile(p) {
   var missing = validateRequired(p, ['studentId']);
   if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
@@ -166,6 +297,8 @@ async function fbGetQuizzes(p) {
     const questions = qSnap.val() || [];
     out.push({
       quizName: quizName,
+      subject: settings.Subject || '',
+      semester: settings.Semester || '',
       quizType: settings.QuizType || 'Regular',
       durationMinutes: settings.DurationMinutes || 30,
       allowMultipleAttempts: settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE',
@@ -374,6 +507,10 @@ const FIREBASE_ACTIONS = {
   registerStudent: fbRegisterStudent,
   studentLogin: fbStudentLogin,
   studentLogout: fbStudentLogout,
+  requestPasswordReset: fbRequestPasswordReset,
+  resendOtp: fbResendOtp,
+  verifyOtp: fbVerifyOtp,
+  completePasswordReset: fbCompletePasswordReset,
   getStudentProfile: fbGetStudentProfile,
   updateStudentProfile: fbUpdateStudentProfile,
   getQuizzes: fbGetQuizzes,

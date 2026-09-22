@@ -62,7 +62,7 @@ async function fbUpdateQuizSettings(p) {
   const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
   var missing = validateRequired(p, ['quizName']);
   if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
-  const editable = ['Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions'];
+  const editable = ['Active', 'ExpiryDate', 'ExpiryTime', 'DurationMinutes', 'AllowMultipleAttempts', 'QuizType', 'RandomizeQuestions', 'RandomizeOptions', 'Subject', 'Semester'];
   const updates = {};
   editable.forEach(function (key) {
     const paramKey = key.charAt(0).toLowerCase() + key.slice(1);
@@ -427,6 +427,22 @@ async function fbGetAnnouncements(p) {
 /* ---------------------------------------------------------------------------
    CONTACTS
 --------------------------------------------------------------------------- */
+/* ---------------------------------------------------------------------------
+   PUBLIC PLATFORM STATS (homepage trust block — no auth required)
+--------------------------------------------------------------------------- */
+async function fbGetPlatformStats(p) {
+  const students = await fbGetAll('students');
+  const settingsSnap = await db.ref('quizSettings').once('value');
+  const allSettings = settingsSnap.val() || {};
+  const publishedQuizzes = Object.keys(allSettings).filter(function (name) { return fbGetEffectiveReviewStatus(allSettings[name]) === 'Published'; });
+  const certificates = await fbGetAll('certificates');
+  return jsonResponse(true, 'OK', {
+    totalStudents: students.filter(function (s) { return s.Status === 'Approved'; }).length,
+    totalQuizzes: publishedQuizzes.length,
+    totalCertificates: certificates.length
+  });
+}
+
 async function fbGetContacts(p) {
   const rows = await fbGetAll('contacts');
   const authed = !isEmpty(p.adminEmail) && !isEmpty(p.adminPassword) && (await fbRequireAdmin(p)).ok;
@@ -627,8 +643,10 @@ async function fbIssueCertificate(p) {
 
   const id = fbGenerateId('CERT');
   await db.ref('certificates/' + id).set({
-    CertificateID: id, StudentID: p.studentId, StudentName: studentRow.Name, CertificateType: p.certificateType,
+    CertificateID: id, StudentID: p.studentId, StudentName: studentRow.Name, StudentPhoto: studentRow.Photo || '',
+    CertificateType: p.certificateType,
     Program: p.program || '', Semester: p.semester || '', Shift: p.shift || '', RollNo: p.rollNo || '',
+    QuizName: p.quizName || '', Subject: p.subject || '', Rank: p.rank || '', Percentage: p.percentage || '',
     AchievementText: p.achievementText, Score: p.score || '', TotalQuizzes: p.totalQuizzes || '',
     MentorName: p.mentorName || '', AdminName: p.adminName || auth.admin.Name,
     IssuedDate: fbFormatDate(new Date()), Status: 'Active'
@@ -693,6 +711,7 @@ Object.assign(FIREBASE_ACTIONS, {
   getAnnouncements: fbGetAnnouncements,
 
   getContacts: fbGetContacts,
+  getPlatformStats: fbGetPlatformStats,
   createContact: fbCreateContact,
   updateContact: fbUpdateContact,
   deleteContact: fbDeleteContact,

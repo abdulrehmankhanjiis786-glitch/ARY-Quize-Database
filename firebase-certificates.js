@@ -16,11 +16,9 @@
    ============================================================================ */
 
 const CERT_TYPES = {
-  QuizTopPerformer: 'Quiz Top Performer',
+  QuizTopPerformer: 'Top Performer',
   OverallTopPerformer: 'Overall Top Performer',
-  ConsistentStudent: 'Consistent Student',
   SubjectExcellence: 'Subject Excellence',
-  QuizCompletion: 'Quiz Completion',
   SpecialAchievement: 'Special Achievement'
 };
 
@@ -30,12 +28,8 @@ function fbAchievementText(type, ctx) {
       return `${ctx.studentName} has demonstrated outstanding academic performance and secured Rank #${ctx.rank} in "${ctx.quizName}".`;
     case 'OverallTopPerformer':
       return `${ctx.studentName} has demonstrated outstanding overall academic performance across ${ctx.quizzesAttempted} quizzes on ARY Quize Bank, with an average score of ${ctx.percentage}%.`;
-    case 'ConsistentStudent':
-      return `${ctx.studentName} is recognized for consistent participation, dedication, and commitment to academic learning, having attempted ${ctx.percentage}% of available quizzes.`;
     case 'SubjectExcellence':
       return `${ctx.studentName} has demonstrated exceptional academic excellence in ${ctx.subject}, achieving an average of ${ctx.percentage}%.`;
-    case 'QuizCompletion':
-      return `${ctx.studentName} has successfully completed "${ctx.quizName}" and demonstrated dedication to learning.`;
     case 'SpecialAchievement':
       return ctx.customMessage || `${ctx.studentName} is recognized for outstanding achievement and valuable contribution to academic excellence.`;
     default:
@@ -124,26 +118,7 @@ async function fbRunEligibilityScan(p) {
     if (id) created++;
   }
 
-  // C) Consistent Student — attempted >= consistencyThreshold% of published quizzes
-  if (publishedQuizzes.length > 0) {
-    for (const sid in byStudent) {
-      const s = studentMap[sid];
-      if (!s) continue;
-      const attemptedQuizNames = new Set(byStudent[sid].map(function (r) { return r.QuizName; }));
-      const attemptedPublished = publishedQuizzes.filter(function (q) { return attemptedQuizNames.has(q); }).length;
-      const pct = Math.round((attemptedPublished / publishedQuizzes.length) * 10000) / 100;
-      if (pct >= consistencyThreshold) {
-        const id = await fbAddEligibility({
-          StudentID: sid, StudentName: s.Name, StudentPhoto: s.Photo || '',
-          CertificateType: 'ConsistentStudent', RefName: '', QuizzesAttempted: attemptedPublished, Percentage: pct,
-          EligibilityReason: 'Attempted ' + pct + '% (' + attemptedPublished + '/' + publishedQuizzes.length + ') of available quizzes.'
-        });
-        if (id) created++;
-      }
-    }
-  }
-
-  // D) Subject Excellence — per subject, students with subject-average >= subjectThreshold
+  // C) Subject Excellence — per subject, students with subject-average >= subjectThreshold
   const bySubject = {};
   results.forEach(function (r) {
     if (isEmpty(r.Subject)) return;
@@ -164,22 +139,6 @@ async function fbRunEligibilityScan(p) {
         });
         if (id) created++;
       }
-    }
-  }
-
-  // E) Quiz Completion — every distinct student+quiz attempt is completion-eligible
-  for (const quizName in byQuiz) {
-    const seen = new Set();
-    byQuiz[quizName].forEach(function (r) { seen.add(r.StudentID); });
-    for (const sid of seen) {
-      const s = studentMap[sid];
-      if (!s) continue;
-      const id = await fbAddEligibility({
-        StudentID: sid, StudentName: s.Name, StudentPhoto: s.Photo || '',
-        CertificateType: 'QuizCompletion', RefName: quizName, QuizName: quizName,
-        EligibilityReason: 'Successfully completed "' + quizName + '".'
-      });
-      if (id) created++;
     }
   }
 
@@ -255,7 +214,7 @@ async function fbGenerateCertificatesFromEligibility(p) {
       AchievementText: p.customAchievementText || fbAchievementText(elig.CertificateType, ctx),
       QuizName: elig.QuizName || '', Subject: elig.Subject || '', Rank: elig.Rank || '',
       Score: elig.Score || '', TotalQuestions: elig.TotalQuestions || '', Percentage: elig.Percentage || '',
-      FounderName: sig.founderName || '', MentorName: p.mentorName || sig.mentorName || '', AdminName: p.adminName || auth.admin.Name,
+      FounderName: sig.FounderName || '', MentorName: p.mentorName || sig.MentorName || '', AdminName: p.adminName || auth.admin.Name,
       IssuedDate: fbFormatDate(new Date()), Status: 'Generated', EligibilityID: eligId
     };
     await db.ref('certificates/' + certId).set(record);

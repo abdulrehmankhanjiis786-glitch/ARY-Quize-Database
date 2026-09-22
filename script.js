@@ -17,6 +17,10 @@ const API_ACTIONS = {
   registerStudent: 'registerStudent',
   studentLogin: 'studentLogin',
   studentLogout: 'studentLogout',
+  requestPasswordReset: 'requestPasswordReset',
+  resendOtp: 'resendOtp',
+  verifyOtp: 'verifyOtp',
+  completePasswordReset: 'completePasswordReset',
   getStudentProfile: 'getStudentProfile',
   updateStudentProfile: 'updateStudentProfile',
   getQuizzes: 'getQuizzes',
@@ -110,7 +114,8 @@ const API_ACTIONS = {
   updateFaq: 'updateFaq',
   deleteFaq: 'deleteFaq',
   getBranding: 'getBranding',
-  updateBranding: 'updateBranding'
+  updateBranding: 'updateBranding',
+  getPlatformStats: 'getPlatformStats'
 };
 
 /* ----------------------------------------------------------------------------
@@ -235,6 +240,77 @@ function statusBadgeClass(status) {
 
 function fmtPct(n) { const v = Number(n); return isNaN(v) ? '—' : v.toFixed(2) + '%'; }
 
+// Wires a .filter-pill-group container: clicking a button sets the
+// container's data-value, toggles the active state, and runs onChange.
+function initFilterPillGroup(containerId, onChange) {
+  const group = document.getElementById(containerId);
+  if (!group || group.dataset.wired) return;
+  group.dataset.wired = 'true';
+  group.querySelectorAll('button').forEach(btn => {
+    btn.addEventListener('click', () => {
+      group.querySelectorAll('button').forEach(b => b.classList.remove('is-active'));
+      btn.classList.add('is-active');
+      group.dataset.value = btn.dataset.filterValue || '';
+      onChange(group.dataset.value);
+    });
+  });
+}
+
+/* ---------------------------------------------------------------------------
+   LIGHTWEIGHT SVG CHARTS — no external library. Used for admin analytics
+   and the student history chart view.
+--------------------------------------------------------------------------- */
+function buildBarChartSVG(title, labels, values, opts) {
+  opts = opts || {};
+  const max = opts.max || Math.max(10, ...values.map(v => v || 0));
+  const w = Math.max(360, labels.length * 70);
+  const h = 220, padL = 34, padB = 46, padT = 14, chartH = h - padT - padB;
+  const barW = (w - padL - 20) / labels.length * 0.6;
+  const step = (w - padL - 20) / labels.length;
+  const color = opts.color || 'var(--color-primary)';
+  const bars = values.map((v, i) => {
+    const bh = Math.max(2, (Math.min(v, max) / max) * chartH);
+    const x = padL + i * step + (step - barW) / 2;
+    const y = padT + chartH - bh;
+    const label = (labels[i] || '').length > 10 ? labels[i].slice(0, 9) + '…' : labels[i];
+    return `<rect x="${x.toFixed(1)}" y="${y.toFixed(1)}" width="${barW.toFixed(1)}" height="${bh.toFixed(1)}" rx="4" fill="${color}"><title>${labels[i]}: ${v}</title></rect>
+      <text x="${(x + barW / 2).toFixed(1)}" y="${(padT + chartH + 16).toFixed(1)}" text-anchor="middle">${label}</text>
+      <text x="${(x + barW / 2).toFixed(1)}" y="${(y - 6).toFixed(1)}" text-anchor="middle" font-weight="700">${opts.format ? opts.format(v) : v}</text>`;
+  }).join('');
+  const gridLines = [0, 0.5, 1].map(f => {
+    const y = padT + chartH * (1 - f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - 20}" y2="${y.toFixed(1)}" stroke="var(--color-border)" stroke-width="1"/>`;
+  }).join('');
+  return `<div class="simple-chart"><p class="simple-chart-title">${escapeHtml(title)}</p>
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="220" preserveAspectRatio="xMinYMid meet">${gridLines}${bars}</svg></div>`;
+}
+
+function buildLineChartSVG(title, labels, values, opts) {
+  opts = opts || {};
+  const max = opts.max || 100;
+  const w = Math.max(360, labels.length * 60), h = 200, padL = 34, padB = 34, padT = 14, chartW = w - padL - 20, chartH = h - padT - padB;
+  const stepX = labels.length > 1 ? chartW / (labels.length - 1) : 0;
+  const points = values.map((v, i) => {
+    const x = padL + i * stepX;
+    const y = padT + chartH - (Math.min(v, max) / max) * chartH;
+    return { x, y, v };
+  });
+  const path = points.map((p, i) => `${i === 0 ? 'M' : 'L'}${p.x.toFixed(1)},${p.y.toFixed(1)}`).join(' ');
+  const areaPath = `${path} L${points[points.length - 1].x.toFixed(1)},${(padT + chartH).toFixed(1)} L${padL},${(padT + chartH).toFixed(1)} Z`;
+  const dots = points.map((p, i) => `<circle cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5" fill="var(--color-gold)"><title>${labels[i]}: ${p.v}%</title></circle>`).join('');
+  const gridLines = [0, 0.5, 1].map(f => {
+    const y = padT + chartH * (1 - f);
+    return `<line x1="${padL}" y1="${y.toFixed(1)}" x2="${w - 20}" y2="${y.toFixed(1)}" stroke="var(--color-border)" stroke-width="1"/>`;
+  }).join('');
+  return `<div class="simple-chart"><p class="simple-chart-title">${escapeHtml(title)}</p>
+    <svg viewBox="0 0 ${w} ${h}" width="100%" height="200" preserveAspectRatio="xMinYMid meet">
+      ${gridLines}
+      <path d="${areaPath}" fill="var(--color-primary-50)"/>
+      <path d="${path}" fill="none" stroke="var(--color-primary)" stroke-width="2.5"/>
+      ${dots}
+    </svg></div>`;
+}
+
 /* ============================================================================
    SESSION MANAGEMENT
    ============================================================================ */
@@ -273,6 +349,7 @@ function hideAll() {
   document.getElementById('studentApp').classList.add('hidden');
   document.getElementById('adminApp').classList.add('hidden');
   document.getElementById('publicHeader').classList.remove('hidden');
+  document.getElementById('publicFooter').classList.remove('hidden');
 }
 
 async function navigate(name) {
@@ -280,9 +357,9 @@ async function navigate(name) {
     hideAll();
     document.getElementById('section-' + name).classList.remove('hidden');
     if (name === 'contact') renderPublicContact();
-    if (name === 'home') renderAdStrip('adStripPublic');
     if (name === 'gallery') renderGallery('galleryGridPublic');
     if (name === 'faqs') renderFaqs('faqListPublic');
+    if (name === 'home') renderHomepageWidgets();
     window.scrollTo(0, 0);
     closeMobileNav();
     return;
@@ -293,6 +370,7 @@ async function navigate(name) {
     if (!student) { toast('Please log in as a student first.', 'warning'); navigate('student-login'); return; }
     hideAll();
     document.getElementById('publicHeader').classList.add('hidden');
+    document.getElementById('publicFooter').classList.add('hidden');
     document.getElementById('studentApp').classList.remove('hidden');
     document.querySelectorAll('#studentSidebar .sidebar-nav a').forEach(a => a.classList.toggle('is-active', a.dataset.nav === name));
     document.getElementById('studentTopbarTitle').textContent = STUDENT_TITLES[name] || '';
@@ -307,7 +385,7 @@ async function navigate(name) {
       'student-profile': 'studentSectionProfile', 'student-contact': 'studentSectionContact'
     };
     document.getElementById(map[name]).classList.remove('hidden');
-    if (name === 'student-dashboard') { loadStudentDashboard(); renderAdStrip('adStripStudent'); }
+    if (name === 'student-dashboard') loadStudentDashboard();
     if (name === 'student-quizzes') loadStudentQuizzes();
     if (name === 'student-results') loadStudentResults();
     if (name === 'student-history') loadStudentHistory();
@@ -327,6 +405,7 @@ async function navigate(name) {
     if (!admin) { toast('Please log in as an admin first.', 'warning'); navigate('admin-login'); return; }
     hideAll();
     document.getElementById('publicHeader').classList.add('hidden');
+    document.getElementById('publicFooter').classList.add('hidden');
     document.getElementById('adminApp').classList.remove('hidden');
     document.querySelectorAll('#adminSidebar .sidebar-nav a').forEach(a => a.classList.toggle('is-active', a.dataset.nav === name));
     document.getElementById('adminTopbarTitle').textContent = ADMIN_TITLES[name] || '';
@@ -376,6 +455,24 @@ document.addEventListener('click', (e) => {
   if (navEl) {
     e.preventDefault();
     navigate(navEl.dataset.nav);
+    return;
+  }
+  const scrollEl = e.target.closest('[data-scroll]');
+  if (scrollEl) {
+    e.preventDefault();
+    const targetId = scrollEl.dataset.scroll;
+    const filter = scrollEl.dataset.scrollFilter;
+    navigate('home').then(() => {
+      setTimeout(() => {
+        if (filter) {
+          const group = document.getElementById('homeTestTypeFilter');
+          const btn = group?.querySelector(`button[data-filter-value="${filter}"]`);
+          if (btn) btn.click();
+        }
+        document.getElementById(targetId)?.scrollIntoView({ behavior: 'smooth', block: 'start' });
+      }, 60);
+    });
+    closeMobileNav();
   }
 });
 
@@ -414,6 +511,38 @@ async function renderContactCards(targetId) {
 }
 function renderPublicContact() { renderContactCards('contactCardsPublic'); }
 
+let galleryLightboxList = [];
+let galleryLightboxIndex = 0;
+
+function renderGalleryLightboxSlide() {
+  const g = galleryLightboxList[galleryLightboxIndex];
+  document.getElementById('galleryLightboxImg').src = g.ImageUrl;
+  document.getElementById('galleryLightboxTitle').textContent = g.Title || '';
+  document.getElementById('galleryLightboxCounter').textContent = (galleryLightboxIndex + 1) + ' / ' + galleryLightboxList.length;
+}
+function openGalleryLightbox(list, startIndex) {
+  galleryLightboxList = list;
+  galleryLightboxIndex = startIndex;
+  renderGalleryLightboxSlide();
+  document.getElementById('galleryLightbox').classList.remove('hidden');
+}
+document.getElementById('galleryLightboxClose').addEventListener('click', () => document.getElementById('galleryLightbox').classList.add('hidden'));
+document.getElementById('galleryLightbox').addEventListener('click', (e) => { if (e.target.id === 'galleryLightbox') e.currentTarget.classList.add('hidden'); });
+document.getElementById('galleryLightboxPrev').addEventListener('click', () => {
+  galleryLightboxIndex = (galleryLightboxIndex - 1 + galleryLightboxList.length) % galleryLightboxList.length;
+  renderGalleryLightboxSlide();
+});
+document.getElementById('galleryLightboxNext').addEventListener('click', () => {
+  galleryLightboxIndex = (galleryLightboxIndex + 1) % galleryLightboxList.length;
+  renderGalleryLightboxSlide();
+});
+document.addEventListener('keydown', (e) => {
+  if (document.getElementById('galleryLightbox').classList.contains('hidden')) return;
+  if (e.key === 'Escape') document.getElementById('galleryLightbox').classList.add('hidden');
+  if (e.key === 'ArrowLeft') document.getElementById('galleryLightboxPrev').click();
+  if (e.key === 'ArrowRight') document.getElementById('galleryLightboxNext').click();
+});
+
 async function renderGallery(targetId) {
   const el = document.getElementById(targetId);
   if (!el) return;
@@ -422,8 +551,8 @@ async function renderGallery(targetId) {
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   const rows = res.data.gallery || [];
   if (rows.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No photos yet</h4></div>`; return; }
-  el.innerHTML = rows.map(g => `
-    <div class="gallery-card">
+  el.innerHTML = rows.map((g, i) => `
+    <div class="gallery-card" data-idx="${i}">
       <img src="${escapeHtml(g.ImageUrl)}" alt="${escapeHtml(g.Title)}">
       <div class="gallery-card-body">
         <h4>${escapeHtml(g.Title)}</h4>
@@ -432,6 +561,9 @@ async function renderGallery(targetId) {
       </div>
     </div>
   `).join('');
+  el.querySelectorAll('.gallery-card').forEach(card => {
+    card.addEventListener('click', () => openGalleryLightbox(rows, Number(card.dataset.idx)));
+  });
 }
 
 async function renderFaqs(targetId) {
@@ -461,23 +593,61 @@ async function renderFaqs(targetId) {
   });
 }
 
-async function renderAdStrip(targetId) {
-  const el = document.getElementById(targetId);
-  if (!el) return;
-  el.classList.add('hidden');
-  el.innerHTML = '';
-  const res = await apiCall(API_ACTIONS.getAdvertisements, {});
-  if (!res.success) return;
-  const rows = res.data.advertisements || [];
-  if (rows.length === 0) return;
-  el.innerHTML = rows.map(a => `
-    <a class="ad-banner" href="${a.LinkUrl ? escapeHtml(a.LinkUrl) : '#'}" ${a.LinkUrl ? 'target="_blank" rel="noopener"' : 'onclick="return false;"'}>
-      <img src="${escapeHtml(a.ImageUrl)}" alt="${escapeHtml(a.Title)}">
-      <div class="ad-banner-title">${escapeHtml(a.Title)}</div>
-    </a>
-  `).join('');
-  el.classList.remove('hidden');
+let adBarList = [];
+let adBarIndex = 0;
+let adBarTimer = null;
+let adBarDismissed = false;
+
+function renderAdBarSlide() {
+  if (adBarList.length === 0) return;
+  const a = adBarList[adBarIndex];
+  document.getElementById('adBarImg').src = a.ImageUrl;
+  document.getElementById('adBarTitle').textContent = a.Title;
+  const link = document.getElementById('adBarLink');
+  if (a.LinkUrl) { link.href = a.LinkUrl; link.style.pointerEvents = ''; }
+  else { link.removeAttribute('href'); link.style.pointerEvents = 'none'; }
+  document.querySelectorAll('#adBarDots span').forEach((dot, i) => dot.classList.toggle('is-active', i === adBarIndex));
 }
+
+async function initAdBar() {
+  const res = await apiCall(API_ACTIONS.getAdvertisements, {});
+  if (!res.success || adBarDismissed) return;
+  adBarList = res.data.advertisements || [];
+  if (adBarList.length === 0) return;
+
+  const dots = document.getElementById('adBarDots');
+  dots.innerHTML = adBarList.length > 1 ? adBarList.map(() => '<span></span>').join('') : '';
+  document.getElementById('adBarPrevBtn').classList.toggle('hidden', adBarList.length < 2);
+  document.getElementById('adBarNextBtn').classList.toggle('hidden', adBarList.length < 2);
+  adBarIndex = 0;
+  renderAdBarSlide();
+  document.getElementById('adBarGlobal').classList.remove('hidden');
+  document.body.classList.add('has-ad-bar');
+
+  if (adBarTimer) clearInterval(adBarTimer);
+  if (adBarList.length > 1) {
+    adBarTimer = setInterval(() => {
+      adBarIndex = (adBarIndex + 1) % adBarList.length;
+      renderAdBarSlide();
+    }, 8000);
+  }
+}
+document.getElementById('adBarCloseBtn').addEventListener('click', () => {
+  adBarDismissed = true;
+  if (adBarTimer) clearInterval(adBarTimer);
+  document.getElementById('adBarGlobal').classList.add('hidden');
+  document.body.classList.remove('has-ad-bar');
+});
+document.getElementById('adBarPrevBtn').addEventListener('click', () => {
+  if (adBarList.length < 2) return;
+  adBarIndex = (adBarIndex - 1 + adBarList.length) % adBarList.length;
+  renderAdBarSlide();
+});
+document.getElementById('adBarNextBtn').addEventListener('click', () => {
+  if (adBarList.length < 2) return;
+  adBarIndex = (adBarIndex + 1) % adBarList.length;
+  renderAdBarSlide();
+});
 
 async function applyBranding() {
   const res = await apiCall(API_ACTIONS.getBranding, {});
@@ -486,6 +656,7 @@ async function applyBranding() {
   if (b.SiteName) {
     document.title = b.SiteName + ' — Assessment Platform';
     document.getElementById('publicBrandText').textContent = b.SiteName;
+    document.getElementById('footerSiteName').textContent = b.SiteName;
   }
   if (b.LogoUrl) {
     document.getElementById('publicBrandLogo').src = b.LogoUrl;
@@ -495,7 +666,69 @@ async function applyBranding() {
   if (b.FaviconUrl) document.getElementById('faviconLink').setAttribute('href', b.FaviconUrl);
   if (b.PrimaryColor) document.documentElement.style.setProperty('--color-primary', b.PrimaryColor);
   if (b.AccentColor) document.documentElement.style.setProperty('--color-gold', b.AccentColor);
+
+  const socialEl = document.getElementById('footerSocialLinks');
+  const socialLinks = [];
+  if (b.FacebookUrl) socialLinks.push(`<a href="${escapeHtml(b.FacebookUrl)}" target="_blank" rel="noopener">Facebook</a>`);
+  if (b.InstagramUrl) socialLinks.push(`<a href="${escapeHtml(b.InstagramUrl)}" target="_blank" rel="noopener">Instagram</a>`);
+  if (b.YoutubeUrl) socialLinks.push(`<a href="${escapeHtml(b.YoutubeUrl)}" target="_blank" rel="noopener">YouTube</a>`);
+  if (b.ContactEmail) socialLinks.push(`<a href="mailto:${escapeHtml(b.ContactEmail)}">${escapeHtml(b.ContactEmail)}</a>`);
+  socialEl.innerHTML = socialLinks.join('');
 }
+document.getElementById('footerYear').textContent = new Date().getFullYear();
+
+async function renderHomepageWidgets() {
+  // Available tests (with Regular/Mock filter)
+  const testsEl = document.getElementById('homeAvailableTests');
+  const renderTests = () => {
+    const filter = document.getElementById('homeTestTypeFilter').dataset.value || '';
+    const list = (homeQuizzesCache || []).filter(q => !filter || q.quizType === filter);
+    if (list.length === 0) { testsEl.innerHTML = `<div class="empty-state">No tests available right now — check back soon.</div>`; return; }
+    testsEl.innerHTML = list.slice(0, 8).map(q => `
+      <div class="home-test-row">
+        <div class="home-test-row-main">
+          <strong>${escapeHtml(q.quizName)}</strong>
+          <span>${q.subject ? escapeHtml(q.subject) + ' • ' : ''}${escapeHtml(q.quizType || 'Regular')} • ${q.questionCount} questions • ${q.durationMinutes} min</span>
+        </div>
+        <span class="home-test-status">Available Now</span>
+      </div>
+    `).join('');
+  };
+  if (!homeQuizzesCache) {
+    const res = await apiCall(API_ACTIONS.getQuizzes, {});
+    homeQuizzesCache = res.success ? (res.data.quizzes || []) : [];
+  }
+  renderTests();
+  initFilterPillGroup('homeTestTypeFilter', renderTests);
+
+  // Latest announcements (3 most recent)
+  const annEl = document.getElementById('homeAnnouncementsList');
+  const annRes = await apiCall(API_ACTIONS.getAnnouncements, {});
+  const anns = (annRes.success ? annRes.data.announcements || [] : []).slice(-3).reverse();
+  annEl.innerHTML = anns.length
+    ? anns.map(a => `<div class="announcement-item"><h4>${escapeHtml(a.Title)}</h4><p>${escapeHtml(a.Message)}</p><time>${escapeHtml(a.Date || '')}</time></div>`).join('')
+    : `<div class="empty-state">No announcements yet.</div>`;
+
+  // Platform stats
+  const statsRes = await apiCall(API_ACTIONS.getPlatformStats, {});
+  if (statsRes.success) {
+    document.getElementById('bandTotalStudents').textContent = statsRes.data.totalStudents + '+';
+    document.getElementById('bandTotalQuizzes').textContent = statsRes.data.totalQuizzes + '+';
+    document.getElementById('bandTotalCertificates').textContent = statsRes.data.totalCertificates + '+';
+  }
+
+  // Gallery preview (first 6)
+  const galRes = await apiCall(API_ACTIONS.getGallery, {});
+  const galEl = document.getElementById('homeGalleryPreview');
+  const galRows = (galRes.success ? galRes.data.gallery || [] : []).slice(0, 6);
+  galEl.innerHTML = galRows.length
+    ? galRows.map((g, i) => `<div class="gallery-card" data-idx="${i}"><img src="${escapeHtml(g.ImageUrl)}" alt="${escapeHtml(g.Title)}"><div class="gallery-card-body"><h4>${escapeHtml(g.Title)}</h4></div></div>`).join('')
+    : `<div class="empty-state">No photos yet.</div>`;
+  galEl.querySelectorAll('.gallery-card').forEach(card => {
+    card.addEventListener('click', () => openGalleryLightbox(galRows, Number(card.dataset.idx)));
+  });
+}
+let homeQuizzesCache = null;
 
 /* ============================================================================
    STUDENT: REGISTRATION
@@ -519,11 +752,13 @@ document.getElementById('studentRegisterForm').addEventListener('submit', async 
 
   const name = document.getElementById('regName').value.trim();
   const email = document.getElementById('regEmail').value.trim();
-  const className = document.getElementById('regClass').value.trim();
+  const semester = document.getElementById('regSemester').value;
+  const className = semester ? ('BSN - Semester ' + semester) : '';
   const pw = document.getElementById('regPassword').value;
   const pw2 = document.getElementById('regConfirmPassword').value;
 
   if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) { errEl.textContent = 'Please enter a valid email address.'; errEl.classList.remove('hidden'); return; }
+  if (!semester) { errEl.textContent = 'Please select your semester.'; errEl.classList.remove('hidden'); return; }
   if (pw !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
   if (pw.length < 6) { errEl.textContent = 'Password must be at least 6 characters.'; errEl.classList.remove('hidden'); return; }
   if (!regPhotoData) { errEl.textContent = 'Profile Picture Required – Please upload your profile picture to complete your registration.'; errEl.classList.remove('hidden'); return; }
@@ -641,13 +876,29 @@ function renderResultsTable(rows) {
 /* ============================================================================
    STUDENT: AVAILABLE QUIZZES
    ============================================================================ */
+let studentQuizzesCache = [];
+
 async function loadStudentQuizzes() {
   const grid = document.getElementById('studentQuizGrid');
   grid.innerHTML = `<div class="empty-state">Loading quizzes…</div>`;
   const res = await apiCall(API_ACTIONS.getQuizzes, {});
   if (!res.success) { grid.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
-  const quizzes = res.data.quizzes || [];
-  if (quizzes.length === 0) { grid.innerHTML = `<div class="empty-state"><h4>No quizzes available right now</h4><p>Check back later.</p></div>`; return; }
+  studentQuizzesCache = res.data.quizzes || [];
+
+  const subjectSelect = document.getElementById('quizFilterSubject');
+  const subjects = [...new Set(studentQuizzesCache.map(q => q.subject).filter(Boolean))].sort();
+  subjectSelect.innerHTML = `<option value="">All Subjects</option>` + subjects.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+
+  renderStudentQuizGrid();
+}
+function renderStudentQuizGrid() {
+  const grid = document.getElementById('studentQuizGrid');
+  const subjectFilter = document.getElementById('quizFilterSubject').value;
+  const typeFilter = document.getElementById('quizFilterType').dataset.value || '';
+  const quizzes = studentQuizzesCache.filter(q =>
+    (!subjectFilter || q.subject === subjectFilter) && (!typeFilter || q.quizType === typeFilter)
+  );
+  if (quizzes.length === 0) { grid.innerHTML = `<div class="empty-state"><h4>No quizzes match this filter</h4></div>`; return; }
   grid.innerHTML = quizzes.map(q => `
     <div class="quiz-card">
       <div class="quiz-card-top">
@@ -655,6 +906,7 @@ async function loadStudentQuizzes() {
         ${badge(q.quizType || 'Regular', q.quizType === 'Mock' ? 'pending' : 'approved')}
       </div>
       <div class="quiz-meta-row">
+        ${q.subject ? `<span>📘 ${escapeHtml(q.subject)}</span>` : ''}
         <span>📝 ${q.questionCount} questions</span>
         <span>⏱ ${q.durationMinutes} min</span>
         ${q.expiryDate ? `<span>📅 Expires ${escapeHtml(q.expiryDate)} ${escapeHtml(q.expiryTime || '')}</span>` : ''}
@@ -667,6 +919,8 @@ async function loadStudentQuizzes() {
     btn.addEventListener('click', () => startQuizAttempt(btn.dataset.quiz));
   });
 }
+document.getElementById('quizFilterSubject').addEventListener('change', renderStudentQuizGrid);
+initFilterPillGroup('quizFilterType', renderStudentQuizGrid);
 document.getElementById('refreshQuizzesBtn').addEventListener('click', loadStudentQuizzes);
 
 /* ============================================================================
@@ -907,6 +1161,7 @@ async function loadStudentResults() {
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   renderResultCards(el, res.data.results);
 }
+let studentHistoryCache = [];
 async function loadStudentHistory() {
   const s = Session.getStudent();
   const el = document.getElementById('studentHistoryTable');
@@ -914,8 +1169,25 @@ async function loadStudentHistory() {
   const res = await apiCall(API_ACTIONS.getStudentResults, { studentId: s.studentId });
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
   const sorted = (res.data.results || []).slice().sort((a, b) => new Date(b.Date + ' ' + (b.Time || '')) - new Date(a.Date + ' ' + (a.Time || '')));
+  studentHistoryCache = sorted;
   renderResultCards(el, sorted);
+  renderStudentHistoryChart();
 }
+function renderStudentHistoryChart() {
+  const chronological = studentHistoryCache.slice().reverse();
+  document.getElementById('studentHistoryChart').innerHTML = chronological.length
+    ? buildLineChartSVG('Score trend over time', chronological.map(r => r.Date), chronological.map(r => Math.round(Number(r.Percentage) * 10) / 10))
+    : `<div class="empty-state">No attempts yet.</div>`;
+}
+document.querySelectorAll('#historyViewToggle button').forEach(btn => {
+  btn.addEventListener('click', () => {
+    document.querySelectorAll('#historyViewToggle button').forEach(b => b.classList.remove('is-active'));
+    btn.classList.add('is-active');
+    const isChart = btn.dataset.view === 'chart';
+    document.getElementById('studentHistoryChart').classList.toggle('hidden', !isChart);
+    document.getElementById('studentHistoryTable').classList.toggle('hidden', isChart);
+  });
+});
 
 // Each quiz result gets its own card (per the brief) with a Download
 // Screenshot button underneath it, powered by html2canvas.
@@ -1280,18 +1552,47 @@ function renderStudentsTable() {
           ${s.Status === 'Approved' ? `<button class="btn btn-outline btn-sm" data-action="deactivate" data-id="${escapeHtml(s.StudentID)}">Deactivate</button>` : ''}
           ${s.Status === 'Deactivated' ? `<button class="btn btn-outline btn-sm" data-action="approve" data-id="${escapeHtml(s.StudentID)}">Reactivate</button>` : ''}
           <button class="btn btn-ghost btn-sm" data-action="performance" data-id="${escapeHtml(s.StudentID)}">View Performance</button>
+          <button class="btn btn-outline btn-sm" data-action="edit" data-id="${escapeHtml(s.StudentID)}">Edit</button>
         </td>
       </tr>
     `).join('')}
   </tbody></table>`;
 
-  el.querySelectorAll('[data-action]:not([data-action="performance"])').forEach(btn => {
+  el.querySelectorAll('[data-action]:not([data-action="performance"]):not([data-action="edit"])').forEach(btn => {
     btn.addEventListener('click', () => handleStudentAction(btn.dataset.action, btn.dataset.id));
   });
   el.querySelectorAll('[data-action="performance"]').forEach(btn => {
     btn.addEventListener('click', () => { navigate('admin-performance'); loadStudentPerformance(btn.dataset.id); });
   });
+  el.querySelectorAll('[data-action="edit"]').forEach(btn => {
+    btn.addEventListener('click', () => openStudentEditModal(btn.dataset.id));
+  });
 }
+
+function openStudentEditModal(studentId) {
+  const s = allStudentsCache.find(r => r.StudentID === studentId);
+  if (!s) return;
+  document.getElementById('studentEditId').value = s.StudentID;
+  document.getElementById('studentEditName').value = s.Name || '';
+  const match = /Semester\s*(\d+)/i.exec(s.Class || '');
+  document.getElementById('studentEditSemester').value = match ? match[1] : '';
+  openModal('studentEditModal');
+}
+document.getElementById('studentEditCancelBtn').addEventListener('click', () => closeModal('studentEditModal'));
+document.getElementById('studentEditForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const semester = document.getElementById('studentEditSemester').value;
+  const btn = document.getElementById('studentEditSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.updateStudentProfile, {
+    studentId: document.getElementById('studentEditId').value,
+    name: document.getElementById('studentEditName').value.trim(),
+    class: semester ? ('BSN - Semester ' + semester) : ''
+  });
+  setBtnLoading(btn, false);
+  if (res.success) { toast('Student updated.', 'success'); closeModal('studentEditModal'); loadAdminStudents(); }
+  else toast(res.message || 'Update failed.', 'error');
+});
 
 async function handleStudentAction(action, studentId) {
   const labels = { approve: 'approve', reject: 'reject', deactivate: 'deactivate' };
@@ -1328,11 +1629,13 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   const quizzes = res.data.quizzes || [];
   if (quizzes.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No quiz tabs detected</h4><p>Add a new sheet tab with Question/OptionA-D/CorrectAnswer columns.</p></div>`; return; }
 
-  el.innerHTML = `<table><thead><tr><th>Quiz</th><th>Status</th><th>Questions</th><th>Duration</th><th>Type</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>
+  el.innerHTML = `<table><thead><tr><th>Quiz</th><th>Subject</th><th>Semester</th><th>Status</th><th>Questions</th><th>Duration</th><th>Type</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>
     ${quizzes.map(q => {
       const isActive = q.Active === true || String(q.Active).toUpperCase() === 'TRUE';
       return `<tr>
         <td>${escapeHtml(q.QuizName)}</td>
+        <td>${escapeHtml(q.Subject || '—')}</td>
+        <td>${q.Semester ? 'Sem ' + escapeHtml(q.Semester) : '—'}</td>
         <td>${badge(isActive ? 'Published' : 'Inactive', isActive ? 'published' : 'inactive')} ${q.expired ? badge('Expired', 'rejected') : ''}</td>
         <td>${q.questionCount}</td>
         <td>${escapeHtml(q.DurationMinutes)} min</td>
@@ -1351,6 +1654,17 @@ async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   el.querySelectorAll('[data-action="toggle"]').forEach(btn => {
     btn.addEventListener('click', async () => {
       const active = btn.dataset.active === 'true';
+      const quiz = quizzes.find(q => q.QuizName === btn.dataset.name);
+
+      // Publishing (not unpublishing) and no semester set yet — ask before it goes live.
+      if (!active && quiz && isEmptyVal(quiz.Semester)) {
+        const semester = prompt(`Which semester is "${btn.dataset.name}" for? Enter a number 1–8:`);
+        if (semester === null) return;
+        if (!/^[1-8]$/.test(semester.trim())) { toast('Please enter a semester number from 1 to 8.', 'error'); return; }
+        const setRes = await apiCall(API_ACTIONS.updateQuizSettings, { quizName: btn.dataset.name, semester: semester.trim(), ...adminAuthParams() });
+        if (!setRes.success) { toast(setRes.message || 'Could not save semester.', 'error'); return; }
+      }
+
       const res2 = await apiCall(API_ACTIONS.setQuizActive, { quizName: btn.dataset.name, active: !active, ...adminAuthParams() });
       if (res2.success) { toast(!active ? 'Quiz published.' : 'Quiz unpublished.', 'success'); loadAdminQuizzes(targetId); }
       else toast(res2.message || 'Could not update quiz.', 'error');
@@ -1382,6 +1696,7 @@ async function handleDeleteQuiz(quizName, targetId) {
 function openQuizSettingsModal(quizName, settings) {
   document.getElementById('quizSettingsName').textContent = quizName;
   document.getElementById('quizSubject').value = settings.Subject || '';
+  document.getElementById('quizSemester').value = settings.Semester || '';
   document.getElementById('quizDuration').value = settings.DurationMinutes || 30;
   document.getElementById('quizType').value = settings.QuizType || 'Regular';
   document.getElementById('quizAllowMultiple').checked = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
@@ -1400,6 +1715,8 @@ document.getElementById('quizSettingsForm').addEventListener('submit', async (e)
   setBtnLoading(btn, true);
   const res = await apiCall(API_ACTIONS.updateQuizSettings, {
     quizName,
+    subject: document.getElementById('quizSubject').value.trim(),
+    semester: document.getElementById('quizSemester').value,
     durationMinutes: document.getElementById('quizDuration').value,
     quizType: document.getElementById('quizType').value,
     allowMultipleAttempts: document.getElementById('quizAllowMultiple').checked,
@@ -1729,6 +2046,9 @@ async function loadAdminAnalytics() {
 
   if (classRes.success) {
     const rows = classRes.data.classAnalytics || [];
+    document.getElementById('classAnalyticsChart').innerHTML = rows.length
+      ? buildBarChartSVG('Average score by class', rows.map(r => r.className), rows.map(r => Math.round(r.averagePercentage * 10) / 10), { max: 100, format: v => v + '%' })
+      : '';
     classEl.innerHTML = rows.length === 0 ? `<div class="empty-state"><h4>No data yet</h4></div>` :
       `<table><thead><tr><th>Class</th><th>Students</th><th>Attempts</th><th>Average</th><th>Highest</th><th>Lowest</th></tr></thead><tbody>
         ${rows.map(r => `<tr><td>${escapeHtml(r.className)}</td><td>${r.totalStudents}</td><td>${r.totalAttempts}</td><td>${fmtPct(r.averagePercentage)}</td><td>${fmtPct(r.highestPercentage)}</td><td>${fmtPct(r.lowestPercentage)}</td></tr>`).join('')}
@@ -1737,6 +2057,9 @@ async function loadAdminAnalytics() {
 
   if (quizRes.success) {
     const rows = quizRes.data.quizAnalytics || [];
+    document.getElementById('quizAnalyticsChart').innerHTML = rows.length
+      ? buildBarChartSVG('Average score by quiz', rows.map(r => r.quizName), rows.map(r => Math.round(r.averagePercentage * 10) / 10), { max: 100, format: v => v + '%', color: 'var(--color-gold)' })
+      : '';
     quizEl.innerHTML = rows.length === 0 ? `<div class="empty-state"><h4>No data yet</h4></div>` :
       `<table><thead><tr><th>Quiz</th><th>Attempts</th><th>Average</th><th>Highest</th><th>Lowest</th></tr></thead><tbody>
         ${rows.map(r => `<tr><td>${escapeHtml(r.quizName)}</td><td>${r.totalAttempts}</td><td>${fmtPct(r.averagePercentage)}</td><td>${fmtPct(r.highestPercentage)}</td><td>${fmtPct(r.lowestPercentage)}</td></tr>`).join('')}
@@ -1756,6 +2079,9 @@ async function loadAdminAnalytics() {
       .map(s => ({ name: s.name, avg: s.total / s.count, attempts: s.count }))
       .sort((a, b) => b.avg - a.avg)
       .slice(0, 10);
+    document.getElementById('topStudentsChart').innerHTML = top.length
+      ? buildBarChartSVG('Top 10 students by average score', top.map(s => s.name), top.map(s => Math.round(s.avg * 10) / 10), { max: 100, format: v => v + '%', color: 'var(--color-success)' })
+      : '';
     topEl.innerHTML = top.length === 0 ? `<div class="empty-state"><h4>No data yet</h4></div>` :
       `<table><thead><tr><th>#</th><th>Student</th><th>Average</th><th>Attempts</th></tr></thead><tbody>
         ${top.map((s, i) => `<tr><td>${i + 1}</td><td>${escapeHtml(s.name)}</td><td>${fmtPct(s.avg)}</td><td>${s.attempts}</td></tr>`).join('')}
@@ -2746,20 +3072,12 @@ async function shareImageViaWhatsapp(elementId, filename, caption) {
 const CERT_TITLES = {
   QuizTopPerformer: 'CERTIFICATE OF ACHIEVEMENT',
   OverallTopPerformer: 'CERTIFICATE OF ACHIEVEMENT',
-  ConsistentStudent: 'CERTIFICATE OF RECOGNITION',
   SubjectExcellence: 'CERTIFICATE OF EXCELLENCE',
-  QuizCompletion: 'CERTIFICATE OF COMPLETION',
-  SpecialAchievement: 'CERTIFICATE OF SPECIAL ACHIEVEMENT',
-  // legacy types kept so certificates issued before this upgrade still render
-  Completion: 'CERTIFICATE OF COMPLETION',
-  OutstandingPerformance: 'CERTIFICATE OF OUTSTANDING PERFORMANCE',
-  MockTest: 'MOCK TEST COMPLETION CERTIFICATE'
+  SpecialAchievement: 'CERTIFICATE OF SPECIAL ACHIEVEMENT'
 };
 const CERT_TYPE_LABEL = {
-  QuizTopPerformer: 'Quiz Top Performer', OverallTopPerformer: 'Overall Top Performer',
-  ConsistentStudent: 'Consistent Student', SubjectExcellence: 'Subject Excellence',
-  QuizCompletion: 'Quiz Completion', SpecialAchievement: 'Special Achievement',
-  Completion: 'Completion', OutstandingPerformance: 'Outstanding Performance', MockTest: 'Mock Test'
+  QuizTopPerformer: 'Top Performer', OverallTopPerformer: 'Overall Top Performer',
+  SubjectExcellence: 'Subject Excellence', SpecialAchievement: 'Special Achievement'
 };
 
 // Original professional red-ink "VERIFIED" stamp — circular, slightly rotated,
@@ -2789,48 +3107,200 @@ function redVerifiedStampSVG(size = 130) {
   </svg>`;
 }
 
+// Laurel wreath — a row of small leaf pairs curving up along an arc,
+// used on either side of the certificate photo. mirror=true flips it for
+// the right-hand side.
+function certLaurelSVG(mirror) {
+  const leaves = [];
+  for (let i = 0; i < 7; i++) {
+    const t = i / 6;
+    const angle = -95 + t * 150; // sweep from bottom to top
+    const rad = angle * Math.PI / 180;
+    const r = 58 + t * 4;
+    const cx = 70 + r * Math.cos(rad);
+    const cy = 150 + r * Math.sin(rad);
+    const scale = 0.65 + t * 0.5;
+    const rot = angle + 90;
+    leaves.push(`<g transform="translate(${cx.toFixed(1)},${cy.toFixed(1)}) rotate(${rot.toFixed(1)}) scale(${scale.toFixed(2)})">
+      <ellipse cx="0" cy="0" rx="15" ry="7" fill="#C9A227"/>
+      <ellipse cx="0" cy="0" rx="15" ry="7" fill="none" stroke="#8F701A" stroke-width="0.8"/>
+    </g>`);
+  }
+  return `<svg width="90" height="170" viewBox="0 0 140 220" style="${mirror ? 'transform:scaleX(-1);' : ''}">
+    <path d="M70,205 Q20,150 30,80 Q38,30 70,10" fill="none" stroke="#C9A227" stroke-width="3"/>
+    ${leaves.join('')}
+  </svg>`;
+}
+
+// Top-right medallion badge — scalloped coin edge, crown + stars, two-line
+// caption, ribbon tails beneath.
+function certMedallionSVG() {
+  const id = 'med' + Math.random().toString(36).slice(2, 8);
+  return `
+  <svg width="150" height="190" viewBox="0 0 200 240">
+    <defs><path id="${id}" d="M100,38 a62,62 0 1,1 -0.1,0"/></defs>
+    <polygon points="70,150 70,232 100,208 130,232 130,150" fill="#14235E"/>
+    <polygon points="70,150 70,232 85,220 85,150" fill="#C9A227" opacity="0.85"/>
+    <polygon points="115,150 115,220 130,232 130,150" fill="#C9A227" opacity="0.85"/>
+    <circle cx="100" cy="100" r="72" fill="#C9A227"/>
+    <circle cx="100" cy="100" r="72" fill="none" stroke="#8F701A" stroke-width="3" stroke-dasharray="7 5"/>
+    <circle cx="100" cy="100" r="60" fill="#14235E"/>
+    <circle cx="100" cy="100" r="60" fill="none" stroke="#C9A227" stroke-width="2"/>
+    <text x="100" y="66" text-anchor="middle" font-size="20" fill="#C9A227">&#128081;</text>
+    <text font-family="Georgia, serif" font-size="12.5" font-weight="800" fill="#fff" letter-spacing="1.5">
+      <textPath href="#${id}" startOffset="15%">EXCELLENCE</textPath>
+    </text>
+    <text x="100" y="112" text-anchor="middle" font-family="Georgia, serif" font-size="10.5" font-weight="700" fill="#fff" letter-spacing="1">IN EDUCATION</text>
+    <text x="100" y="132" text-anchor="middle" font-size="13" fill="#C9A227" letter-spacing="4">&#9733;&#9733;&#9733;</text>
+  </svg>`;
+}
+
+// Small navy line icons for the certificate info bar.
+function certIconSVG(name) {
+  const paths = {
+    calendar: '<rect x="3" y="5" width="18" height="16" rx="2"/><path d="M3 10h18M8 3v4M16 3v4"/>',
+    trophy: '<path d="M8 4h8v4a4 4 0 0 1-8 0V4Z"/><path d="M8 5H5a2 2 0 0 0 2 4M16 5h3a2 2 0 0 1-2 4"/><path d="M12 12v3M9 19h6M10 19v-2a2 2 0 0 1 4 0v2"/>',
+    chart: '<path d="M4 20V10M10 20V4M16 20v-7M22 20V13"/>',
+    cap: '<path d="M12 4 2 9l10 5 10-5-10-5Z"/><path d="M6 11.5V17a6 3 0 0 0 12 0v-5.5"/>'
+  };
+  return `<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#1E3A8A" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${paths[name] || ''}</svg>`;
+}
+
+// Small graduation-cap-over-open-book crest for the certificate header,
+// mirrors the site logo mark in vector form.
+function certLogoCrestSVG() {
+  return `<svg width="52" height="52" viewBox="0 0 52 52">
+    <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#14235E"/>
+    <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#14235E" stroke-width="2"/>
+    <circle cx="42" cy="19" r="1.6" fill="#14235E"/>
+    <path d="M42 19v9" stroke="#14235E" stroke-width="1.6"/>
+    <path d="M10 38c3-3 9-3 16-3s13 0 16 3" fill="none" stroke="#B3121B" stroke-width="2.4" stroke-linecap="round"/>
+  </svg>`;
+}
+
+// Same crest, smaller and in white, for the dark footer bar.
+function certLogoCrestSmallSVG() {
+  return `<svg width="28" height="28" viewBox="0 0 52 52">
+    <path d="M26 8 6 17l20 9 20-9-20-9Z" fill="#fff"/>
+    <path d="M14 20.5v8c0 3 5.4 5.5 12 5.5s12-2.5 12-5.5v-8" fill="none" stroke="#fff" stroke-width="2"/>
+  </svg>`;
+}
+
+// Decorative navy+gold ribbon-fold accent for each of the four corners of
+// the certificate border. Rotated/mirrored per-corner via CSS on the wrapper.
+function certCornerRibbonSVG() {
+  return `<svg width="120" height="120" viewBox="0 0 120 120">
+    <polygon points="0,0 120,0 0,120" fill="#14235E"/>
+    <polygon points="0,0 46,0 0,46" fill="#C9A227"/>
+    <polygon points="0,0 26,0 0,26" fill="#14235E"/>
+    <line x1="0" y1="34" x2="34" y2="0" stroke="#8F701A" stroke-width="2" opacity="0.6"/>
+    <line x1="0" y1="58" x2="58" y2="0" stroke="#0B1730" stroke-width="1.5" opacity="0.5"/>
+  </svg>`;
+}
+
 // Builds the certificate artwork as an off-DOM node so it can be captured at
 // high resolution regardless of what's currently on screen. Uses only vector
 // (SVG icons, CSS borders, web-font text) so nothing in it can look blurry.
 function buildCertificateNode(cert, signatures, qrDataUrl) {
   signatures = signatures || {};
+  const positionLabel = (CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType || '').toUpperCase();
+  const focusLine = cert.QuizName || cert.Subject || 'ARY Quize Bank';
+  const sigBlock = (imgKey, nameVal, role) => `
+    <div class="cert-sig-col">
+      ${signatures[imgKey] ? `<img class="cert-sig-img" src="${signatures[imgKey]}" alt="">` : `<span class="sig-script">${escapeHtml(nameVal || role)}</span>`}
+      <div class="cert-sig-line"></div>
+      <strong>${escapeHtml(nameVal || '')}</strong>
+      <small>${role}</small>
+    </div>`;
+
   const wrap = document.createElement('div');
   wrap.className = 'certificate-sheet';
   wrap.innerHTML = `
     <div class="certificate-border">
-      <div class="certificate-stamp">${redVerifiedStampSVG(110)}</div>
-      <div class="certificate-qr">
-        ${qrDataUrl ? `<img src="${qrDataUrl}" alt="Scan to verify">` : ''}
-        <span>Scan to verify</span>
+      <div class="cert-corner cert-corner-tl">${certCornerRibbonSVG()}</div>
+      <div class="cert-corner cert-corner-tr">${certCornerRibbonSVG()}</div>
+      <div class="cert-corner cert-corner-bl">${certCornerRibbonSVG()}</div>
+      <div class="cert-corner cert-corner-br">${certCornerRibbonSVG()}</div>
+
+      <div class="cert-header-row">
+        <div class="cert-header-left">
+          ${certLogoCrestSVG()}
+          <div>
+            <div class="cert-brand-word"><span class="navy">ARY</span> <span class="red">QUIZE BANK</span></div>
+            <div class="cert-brand-tag">Learn &nbsp;•&nbsp; Practice &nbsp;•&nbsp; Achieve Excellence</div>
+          </div>
+        </div>
+        <div class="cert-header-divider"></div>
+        <div class="cert-header-right">
+          <p>Empowering Future Nurses<br>Through Knowledge</p>
+          <div class="cert-header-rule"></div>
+          <span>BSN &nbsp;|&nbsp; Nursing Education &nbsp;|&nbsp; Academic Excellence</span>
+        </div>
       </div>
-      <div class="certificate-photo-frame">
-        <img src="${photoOrDefault(cert.StudentPhoto)}" alt="">
+
+      <div class="cert-medallion">${certMedallionSVG()}</div>
+
+      <div class="cert-side-left">
+        <span class="cert-side-label">Certificate Type:</span>
+        <div class="cert-type-pill">${escapeHtml(CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType)}</div>
+        <span class="cert-side-label" style="margin-top:16px;">Certificate ID:</span>
+        <div class="cert-id-box">${escapeHtml(cert.CertificateID)}</div>
       </div>
-      <div class="certificate-cap">🎓</div>
-      <h1 class="certificate-brand">ARY QUIZE BANK</h1>
-      <p class="certificate-slogan">Learn • Practice • Achieve Excellence</p>
-      <div class="certificate-rule"></div>
-      <h2 class="certificate-title">${escapeHtml(cert.CertificateTitle || CERT_TITLES[cert.CertificateType] || 'CERTIFICATE')}</h2>
-      <p class="certificate-presented">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
-      <div class="certificate-name">${escapeHtml(cert.StudentName)}</div>
-      <p class="certificate-body">${escapeHtml(cert.AchievementText)}</p>
-      ${!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuestions) ? `<p class="certificate-score">${escapeHtml(cert.Score)} OUT OF ${escapeHtml(cert.TotalQuestions)}</p>` : ''}
-      <div class="certificate-meta-grid">
-        <div><strong>Certificate Type</strong><span>${escapeHtml(CERT_TYPE_LABEL[cert.CertificateType] || cert.CertificateType)}</span></div>
-        ${cert.QuizName ? `<div><strong>Quiz</strong><span>${escapeHtml(cert.QuizName)}</span></div>` : ''}
-        ${cert.Subject ? `<div><strong>Subject</strong><span>${escapeHtml(cert.Subject)}</span></div>` : ''}
-        ${!isEmptyVal(cert.Rank) ? `<div><strong>Rank</strong><span>#${escapeHtml(cert.Rank)}</span></div>` : ''}
-        ${!isEmptyVal(cert.Percentage) ? `<div><strong>Percentage</strong><span>${escapeHtml(cert.Percentage)}%</span></div>` : ''}
-        ${cert.Program ? `<div><strong>Program</strong><span>${escapeHtml(cert.Program)}</span></div>` : ''}
-        ${cert.Semester ? `<div><strong>Semester</strong><span>${escapeHtml(cert.Semester)}</span></div>` : ''}
-        ${cert.RollNo ? `<div><strong>Roll No.</strong><span>${escapeHtml(cert.RollNo)}</span></div>` : ''}
+
+      <div class="cert-side-right">
+        <p class="cert-quote">&ldquo;Small steps in learning<br>lead to big dreams<br>in life.&rdquo;</p>
+        <div class="cert-header-rule" style="margin:10px auto;"></div>
+        ${qrDataUrl ? `<img class="cert-qr-img" src="${qrDataUrl}" alt="Scan to verify">` : ''}
+        <span class="cert-qr-caption">Scan to Verify</span>
+        <span class="cert-qr-sub">Certificate ID</span>
       </div>
-      <div class="certificate-signatures">
-        <div><span class="sig-script">${escapeHtml(cert.FounderName || signatures.FounderName || 'Founder')}</span><strong>${escapeHtml(cert.FounderName || signatures.FounderName || '')}</strong><small>Founder</small></div>
-        <div><span class="sig-script">${escapeHtml(cert.MentorName || 'Mentor')}</span><strong>${escapeHtml(cert.MentorName || '')}</strong><small>Mentor</small></div>
-        <div><span class="sig-script">${escapeHtml(cert.AdminName || 'Admin')}</span><strong>${escapeHtml(cert.AdminName || '')}</strong><small>Admin</small></div>
+
+      <div class="cert-center">
+        <h1 class="cert-title-main">CERTIFICATE</h1>
+        <p class="cert-title-sub">OF ACHIEVEMENT</p>
+        <div class="cert-header-rule"></div>
+        <p class="certificate-presented">THIS CERTIFICATE IS PROUDLY PRESENTED TO</p>
+
+        <div class="cert-photo-row">
+          ${certLaurelSVG(false)}
+          <div class="certificate-photo-frame"><img src="${photoOrDefault(cert.StudentPhoto)}" alt=""></div>
+          ${certLaurelSVG(true)}
+        </div>
+
+        <div class="certificate-name">${escapeHtml(cert.StudentName)}</div>
+
+        <p class="certificate-body">
+          has demonstrated outstanding performance and dedication in
+          <strong>${escapeHtml(focusLine)}</strong> and has secured the position of
+        </p>
+        <p class="cert-position-line">${escapeHtml(positionLabel)}</p>
+        <p class="certificate-body">in the ARY Quiz Bank platform.</p>
+        <p class="cert-encourage">${escapeHtml(cert.AchievementText || 'Your hard work, commitment and passion for learning are truly commendable. Keep striving for excellence!')}</p>
+
+        <div class="cert-info-bar">
+          <div><span>${certIconSVG('calendar')}</span><div><strong>Issue Date</strong><em>${escapeHtml(cert.IssuedDate || '')}</em></div></div>
+          <div><span>${certIconSVG('trophy')}</span><div><strong>Rank / Position</strong><em>${!isEmptyVal(cert.Rank) ? '#' + escapeHtml(cert.Rank) : '—'}</em></div></div>
+          <div><span>${certIconSVG('chart')}</span><div><strong>Score / Percentage</strong><em>${!isEmptyVal(cert.Percentage) ? escapeHtml(cert.Percentage) + '%' : (!isEmptyVal(cert.Score) && !isEmptyVal(cert.TotalQuestions) ? escapeHtml(cert.Score) + '/' + escapeHtml(cert.TotalQuestions) : '—')}</em></div></div>
+          <div><span>${certIconSVG('cap')}</span><div><strong>Quiz / Subject</strong><em>${escapeHtml(cert.QuizName || cert.Subject || '—')}</em></div></div>
+        </div>
+
+        <div class="certificate-signatures">
+          ${sigBlock('FounderSignature', cert.FounderName || signatures.FounderName, 'Founder')}
+          ${sigBlock('MentorSignature', cert.MentorName || signatures.MentorName, 'Mentor')}
+          ${sigBlock('AdminSignature', cert.AdminName, 'Admin')}
+        </div>
       </div>
-      <p class="certificate-issued">Issued ${escapeHtml(cert.IssuedDate)} · Certificate ID ${escapeHtml(cert.CertificateID)}</p>
+
+      <div class="cert-stamp-wrap">${redVerifiedStampSVG(105)}</div>
+
+      <div class="cert-footer-bar">
+        <div class="cert-footer-left">${certLogoCrestSmallSVG()} <div><strong>ARY Quiz Bank</strong><span>Learn • Practice • Achieve Excellence</span></div></div>
+        <div class="cert-footer-center">
+          <span>🌐 www.aryquizebank.com</span>
+          <span>✉ info@aryquizebank.com</span>
+        </div>
+        <div class="cert-footer-right"><em>Better Students</em><strong>Brighter Future</strong></div>
+      </div>
     </div>
   `;
   wrap.style.position = 'fixed';
@@ -2940,6 +3410,7 @@ function currentEmailAudiencePayload() {
   if (type === 'one' || type === 'multiple') payload.studentIds = emailSelectedStudentIds;
   if (type === 'class') payload.className = document.getElementById('emailClassName').value.trim();
   if (type === 'topPerformers') payload.topN = document.getElementById('emailTopN').value;
+  if (type === 'nonAttempters') payload.quizName = document.getElementById('emailQuizName').value;
   return payload;
 }
 
@@ -2950,15 +3421,47 @@ async function updateEmailAudienceCount() {
   countEl.textContent = res.success ? `${res.data.count} recipient(s) will receive this email.` : (res.message || 'Could not preview recipients.');
 }
 
-document.getElementById('emailAudienceType').addEventListener('change', (e) => {
+document.getElementById('emailAudienceType').addEventListener('change', async (e) => {
   const type = e.target.value;
   document.getElementById('emailStudentPickerField').classList.toggle('hidden', type !== 'one' && type !== 'multiple');
   document.getElementById('emailClassField').classList.toggle('hidden', type !== 'class');
   document.getElementById('emailTopNField').classList.toggle('hidden', type !== 'topPerformers');
+  document.getElementById('emailQuizField').classList.toggle('hidden', type !== 'nonAttempters');
+  if (type === 'nonAttempters') {
+    const sel = document.getElementById('emailQuizName');
+    if (!sel.options.length) {
+      const res = await apiCall(API_ACTIONS.getAllQuizzesAdmin, adminAuthParams());
+      const quizzes = res.success ? res.data.quizzes || [] : [];
+      sel.innerHTML = quizzes.map(q => `<option value="${escapeHtml(q.QuizName)}">${escapeHtml(q.QuizName)}</option>`).join('');
+    }
+  }
   updateEmailAudienceCount();
 });
+document.getElementById('emailQuizName').addEventListener('change', updateEmailAudienceCount);
 document.getElementById('emailClassName').addEventListener('change', updateEmailAudienceCount);
 document.getElementById('emailTopN').addEventListener('change', updateEmailAudienceCount);
+
+const EMAIL_TEMPLATES = {
+  testAnnouncement: {
+    subject: 'New Test Available: {quiz}',
+    message: 'Hi {name},\n\nA new test is now available on ARY Quize Bank: "{quiz}".\n\nLog in to your student dashboard and attempt it before the deadline.\n\nGood luck!\nARY Quize Bank Team'
+  },
+  topPerformer: {
+    subject: 'Congratulations on Your Top Performance! 🏆',
+    message: 'Hi {name},\n\nCongratulations! You have been recognized as a top performer on ARY Quize Bank. Your dedication and hard work are truly commendable.\n\nKeep up the excellent work — a certificate is on its way to your account.\n\nBest regards,\nARY Quize Bank Team'
+  },
+  reminderNonAttempt: {
+    subject: 'Reminder: You Haven\'t Attempted "{quiz}" Yet',
+    message: 'Hi {name},\n\nWe noticed you haven\'t attempted "{quiz}" yet. Please log in to your student dashboard and complete it as soon as possible.\n\nIf you\'re facing any issues, feel free to reach out.\n\nBest regards,\nARY Quize Bank Team'
+  }
+};
+document.getElementById('emailTemplate').addEventListener('change', (e) => {
+  const tpl = EMAIL_TEMPLATES[e.target.value];
+  if (!tpl) return;
+  const quizName = document.getElementById('emailQuizName').value || '{quiz}';
+  document.getElementById('emailCenterSubject').value = tpl.subject.replace(/\{quiz\}/g, quizName);
+  document.getElementById('emailCenterMessage').value = tpl.message.replace(/\{quiz\}/g, quizName);
+});
 
 document.getElementById('emailStudentSearchInput').addEventListener('input', async (e) => {
   const q = e.target.value.trim().toLowerCase();
@@ -3164,6 +3667,10 @@ document.getElementById('certificateForm').addEventListener('submit', async (e) 
   const res = await apiCall(API_ACTIONS.issueCertificate, {
     studentId,
     certificateType: document.getElementById('certType').value,
+    quizName: document.getElementById('certQuizName').value.trim(),
+    subject: document.getElementById('certSubject').value.trim(),
+    rank: document.getElementById('certRank').value.trim(),
+    percentage: document.getElementById('certPercentage').value.trim(),
     program: document.getElementById('certProgram').value.trim(),
     semester: document.getElementById('certSemester').value.trim(),
     shift: document.getElementById('certShift').value.trim(),
@@ -3215,9 +3722,113 @@ async function renderVerifyPage(certificateId) {
   `;
 }
 
+/* ---------------------------------------------------------------------------
+   FORGOT PASSWORD — 6-digit OTP flow (email -> OTP -> new password), shared
+   by both Student and Admin login. All three steps live in one modal.
+--------------------------------------------------------------------------- */
+let fpResetId = '';
+let fpRole = 'student';
+let fpResendTimer = null;
+
+function fpShowStep(step) {
+  ['fpStepEmail', 'fpStepOtp', 'fpStepPassword'].forEach(id => document.getElementById(id).classList.add('hidden'));
+  document.getElementById(step).classList.remove('hidden');
+}
+function fpStartResendCooldown() {
+  const btn = document.getElementById('fpResendBtn');
+  let seconds = 45;
+  btn.disabled = true;
+  const tick = () => {
+    btn.textContent = seconds > 0 ? `Resend code (${seconds}s)` : 'Resend code';
+    if (seconds <= 0) { btn.disabled = false; clearInterval(fpResendTimer); }
+    seconds--;
+  };
+  tick();
+  if (fpResendTimer) clearInterval(fpResendTimer);
+  fpResendTimer = setInterval(tick, 1000);
+}
+
+document.querySelectorAll('[data-forgot-password]').forEach(link => {
+  link.addEventListener('click', (e) => {
+    e.preventDefault();
+    fpRole = link.dataset.forgotPassword;
+    fpResetId = '';
+    document.getElementById('forgotPasswordForm').reset();
+    document.getElementById('fpOtpForm').reset();
+    document.getElementById('fpPasswordForm').reset();
+    ['forgotPasswordError', 'fpOtpError', 'fpPasswordError'].forEach(id => document.getElementById(id).classList.add('hidden'));
+    fpShowStep('fpStepEmail');
+    openModal('forgotPasswordModal');
+  });
+});
+document.getElementById('forgotPasswordCancelBtn').addEventListener('click', () => { clearInterval(fpResendTimer); closeModal('forgotPasswordModal'); });
+document.getElementById('fpOtpCancelBtn').addEventListener('click', () => { clearInterval(fpResendTimer); closeModal('forgotPasswordModal'); });
+document.getElementById('fpPasswordCancelBtn').addEventListener('click', () => { clearInterval(fpResendTimer); closeModal('forgotPasswordModal'); });
+
+// Step 1: email -> send OTP
+document.getElementById('forgotPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('forgotPasswordSendBtn');
+  const errEl = document.getElementById('forgotPasswordError');
+  errEl.classList.add('hidden');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.requestPasswordReset, {
+    email: document.getElementById('forgotPasswordEmail').value.trim(),
+    role: fpRole
+  });
+  setBtnLoading(btn, false);
+  if (!res.success) { errEl.textContent = res.message || 'Something went wrong.'; errEl.classList.remove('hidden'); return; }
+  fpResetId = res.data.resetId;
+  document.getElementById('fpOtpEmailLabel').textContent = document.getElementById('forgotPasswordEmail').value.trim();
+  document.getElementById('fpOtpInput').value = '';
+  fpShowStep('fpStepOtp');
+  fpStartResendCooldown();
+});
+
+// Step 2: verify OTP
+document.getElementById('fpOtpForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const btn = document.getElementById('fpOtpVerifyBtn');
+  const errEl = document.getElementById('fpOtpError');
+  errEl.classList.add('hidden');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.verifyOtp, { resetId: fpResetId, otp: document.getElementById('fpOtpInput').value.trim() });
+  setBtnLoading(btn, false);
+  if (!res.success) { errEl.textContent = res.message || 'Incorrect code.'; errEl.classList.remove('hidden'); return; }
+  clearInterval(fpResendTimer);
+  fpShowStep('fpStepPassword');
+});
+document.getElementById('fpResendBtn').addEventListener('click', async () => {
+  const btn = document.getElementById('fpResendBtn');
+  const errEl = document.getElementById('fpOtpError');
+  errEl.classList.add('hidden');
+  const res = await apiCall(API_ACTIONS.resendOtp, { resetId: fpResetId });
+  if (!res.success) { errEl.textContent = res.message || 'Could not resend code.'; errEl.classList.remove('hidden'); return; }
+  toast('A new code has been sent.', 'success');
+  fpStartResendCooldown();
+});
+
+// Step 3: set new password
+document.getElementById('fpPasswordForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const errEl = document.getElementById('fpPasswordError');
+  errEl.classList.add('hidden');
+  const pw = document.getElementById('fpNewPassword').value;
+  const pw2 = document.getElementById('fpConfirmPassword').value;
+  if (pw !== pw2) { errEl.textContent = 'Passwords do not match.'; errEl.classList.remove('hidden'); return; }
+  const btn = document.getElementById('fpPasswordSaveBtn');
+  setBtnLoading(btn, true);
+  const res = await apiCall(API_ACTIONS.completePasswordReset, { resetId: fpResetId, newPassword: pw });
+  setBtnLoading(btn, false);
+  if (!res.success) { errEl.textContent = res.message || 'Something went wrong.'; errEl.classList.remove('hidden'); return; }
+  closeModal('forgotPasswordModal');
+  toast('Password updated — you can log in now.', 'success');
+});
+
 (function init() {
   document.getElementById('regPhotoPreview').src = DEFAULT_AVATAR;
   applyBranding();
+  initAdBar();
 
   const verifyId = new URLSearchParams(location.search).get('verify');
   if (verifyId) { navigate('verify'); renderVerifyPage(verifyId); return; }
