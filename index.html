@@ -525,6 +525,12 @@
           </div>
         </div>
         <div class="stat-grid" id="studentStatGrid"></div>
+        <div class="panel">
+          <div class="panel-head"><h3>🏆 Top 3 Overall Performers</h3></div>
+          <p class="field-hint" id="topPerformersNote">Ranked by average score across every published quiz — only students who've completed all of them qualify.</p>
+          <div id="topPerformersList" class="top-performers-list"></div>
+          <div id="yourStandingRow" class="your-standing-row hidden"></div>
+        </div>
         <div class="content-grid-2">
           <div class="panel">
             <div class="panel-head"><h3>Recent Results</h3></div>
@@ -778,6 +784,11 @@
       <section id="adminSectionDashboard" class="content-section">
         <h2>Overview</h2>
         <div class="stat-grid" id="adminStatGrid"></div>
+        <div class="panel">
+          <div class="panel-head"><h3>🏆 Top 3 Overall Performers</h3></div>
+          <p class="field-hint">Ranked by average score across every published quiz — only students who've completed all of them qualify.</p>
+          <div id="adminTopPerformersList" class="top-performers-list"></div>
+        </div>
         <div class="content-grid-2">
           <div class="panel">
             <div class="panel-head"><h3>Recent Results</h3></div>
@@ -814,6 +825,24 @@
           <div class="row-actions">
             <button class="btn btn-outline btn-sm" id="refreshAdminQuizzesBtn">Refresh</button>
             <button class="btn btn-primary btn-sm" id="newQuizBtn">Create New Quiz</button>
+          </div>
+        </div>
+        <div class="quiz-filter-row">
+          <select id="aqFilterSubject" class="filter-select"><option value="">All Subjects</option></select>
+          <select id="aqFilterSemester" class="filter-select"><option value="">All Semesters</option>
+            <option value="1">Semester 1</option><option value="2">Semester 2</option><option value="3">Semester 3</option>
+            <option value="4">Semester 4</option><option value="5">Semester 5</option><option value="6">Semester 6</option>
+            <option value="7">Semester 7</option><option value="8">Semester 8</option>
+          </select>
+          <div class="filter-pill-group" id="aqFilterType" data-value="">
+            <button type="button" class="is-active" data-filter-value="">All Types</button>
+            <button type="button" data-filter-value="Regular">Regular</button>
+            <button type="button" data-filter-value="Mock">Mock</button>
+          </div>
+          <div class="filter-pill-group" id="aqFilterStatus" data-value="">
+            <button type="button" class="is-active" data-filter-value="">All</button>
+            <button type="button" data-filter-value="Published">Published</button>
+            <button type="button" data-filter-value="Inactive">Inactive</button>
           </div>
         </div>
         <div id="adminQuizzesTable" class="table-wrap"></div>
@@ -1318,8 +1347,9 @@
       <p class="result-meta" id="resultMeta">—</p>
     </div>
     <div class="modal-actions modal-actions-column">
+      <button class="btn btn-primary btn-block" id="resultViewReportBtn">View Report</button>
       <button class="btn btn-outline btn-block" id="resultScreenshotBtn">Download Screenshot</button>
-      <button class="btn btn-primary btn-block" id="resultCloseBtn">Back to Dashboard</button>
+      <button class="btn btn-ghost btn-block" id="resultCloseBtn">Back to Dashboard</button>
     </div>
   </div>
 </div>
@@ -1776,15 +1806,55 @@
     <h3 id="questionEditorTitle">Create New Quiz</h3>
     <form id="questionEditorForm">
       <label class="field" id="qeQuizNameField">
-        <span>Quiz Name <span class="field-hint">(becomes the sheet tab name — keep it unique)</span></span>
+        <span>Quiz Name <span class="field-hint">(must stay unique — renaming is safe, it carries settings and results along)</span></span>
         <input type="text" id="qeQuizName" required>
       </label>
+
+      <div class="qe-settings-grid">
+        <label class="field">
+          <span>Subject</span>
+          <input type="text" id="qeSubject" placeholder="e.g. Pharmacology">
+        </label>
+        <label class="field">
+          <span>Semester</span>
+          <select id="qeSemester">
+            <option value="">Select semester</option>
+            <option value="1">Semester 1</option><option value="2">Semester 2</option><option value="3">Semester 3</option>
+            <option value="4">Semester 4</option><option value="5">Semester 5</option><option value="6">Semester 6</option>
+            <option value="7">Semester 7</option><option value="8">Semester 8</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Quiz Type</span>
+          <select id="qeQuizType">
+            <option value="Regular">Regular</option>
+            <option value="Mock">Mock</option>
+          </select>
+        </label>
+        <label class="field">
+          <span>Duration (minutes)</span>
+          <input type="number" id="qeDuration" value="30" min="1">
+        </label>
+        <label class="field">
+          <span>Expiry Date <span class="field-hint">(optional)</span></span>
+          <input type="date" id="qeExpiryDate">
+        </label>
+        <label class="field">
+          <span>Expiry Time <span class="field-hint">(optional)</span></span>
+          <input type="time" id="qeExpiryTime">
+        </label>
+      </div>
+      <div class="qe-settings-toggles">
+        <label class="field-inline"><input type="checkbox" id="qeAllowMultiple"><span>Allow multiple attempts</span></label>
+        <label class="field-inline"><input type="checkbox" id="qeRandomizeQ"><span>Randomize question order</span></label>
+        <label class="field-inline"><input type="checkbox" id="qeRandomizeO"><span>Randomize option content (A/B/C/D positions stay fixed)</span></label>
+      </div>
 
       <details class="bulk-import">
         <summary>Paste / bulk-upload questions instead of typing them one by one</summary>
         <p class="field-hint">One question per line, fields separated by <code>|</code>:<br>
-          <code>Question text | Option A | Option B | Option C | Option D | CorrectLetter</code></p>
-        <textarea id="qeBulkText" rows="5" placeholder="What is hemoglobin? | A protein | A vitamin | A hormone | A mineral | A"></textarea>
+          <code>Question text | Option A | Option B | Option C | Option D | CorrectLetter | Explanation (optional)</code></p>
+        <textarea id="qeBulkText" rows="5" placeholder="What is hemoglobin? | A protein | A vitamin | A hormone | A mineral | A | Hemoglobin is the iron-containing protein in red blood cells that carries oxygen."></textarea>
         <button type="button" class="btn btn-outline btn-sm" id="qeBulkImportBtn">Add These Rows</button>
       </details>
 

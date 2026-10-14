@@ -142,18 +142,58 @@ async function fbCreateQuiz(p) {
   if (!validation.ok) return jsonResponse(false, validation.message);
 
   const rows = questions.map(function (q) {
-    return { Question: q.question, OptionA: q.optionA, OptionB: q.optionB, OptionC: q.optionC, OptionD: q.optionD, CorrectAnswer: String(q.correctAnswer).toUpperCase() };
+    return { Question: q.question, OptionA: q.optionA, OptionB: q.optionB, OptionC: q.optionC, OptionD: q.optionD, CorrectAnswer: String(q.correctAnswer).toUpperCase(), Explanation: q.explanation || '' };
   });
 
   await db.ref('quizzes/' + p.quizName).set({ name: p.quizName, questions: rows });
   await db.ref('quizSettings/' + p.quizName).set({
-    QuizName: p.quizName, Active: false, ExpiryDate: '', ExpiryTime: '',
-    DurationMinutes: p.durationMinutes || 30, AllowMultipleAttempts: false, QuizType: p.quizType || 'Regular',
-    RandomizeQuestions: false, RandomizeOptions: false, CreatedDate: fbFormatDate(new Date()),
-    ReviewStatus: 'Draft', ReviewNote: ''
+    QuizName: p.quizName, Active: false, ExpiryDate: p.expiryDate || '', ExpiryTime: p.expiryTime || '',
+    DurationMinutes: p.durationMinutes || 30,
+    AllowMultipleAttempts: p.allowMultipleAttempts === true || String(p.allowMultipleAttempts).toUpperCase() === 'TRUE',
+    QuizType: p.quizType || 'Regular',
+    RandomizeQuestions: p.randomizeQuestions === true || String(p.randomizeQuestions).toUpperCase() === 'TRUE',
+    RandomizeOptions: p.randomizeOptions === true || String(p.randomizeOptions).toUpperCase() === 'TRUE',
+    Subject: p.subject || '', Semester: p.semester || '',
+    CreatedDate: fbFormatDate(new Date()), ReviewStatus: 'Draft', ReviewNote: ''
   });
 
   return jsonResponse(true, 'Quiz created with ' + rows.length + ' question(s).', { quizName: p.quizName, questionCount: rows.length });
+}
+
+async function fbRenameQuiz(p) {
+  const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
+  var missing = validateRequired(p, ['oldQuizName', 'newQuizName']);
+  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
+  const oldName = p.oldQuizName, newName = p.newQuizName.trim();
+  if (oldName === newName) return jsonResponse(true, 'No change.');
+
+  const newSnap = await db.ref('quizzes/' + newName).once('value');
+  if (newSnap.exists()) return jsonResponse(false, 'A quiz with this name already exists.');
+
+  const quizSnap = await db.ref('quizzes/' + oldName).once('value');
+  const settingsSnap = await db.ref('quizSettings/' + oldName).once('value');
+  if (!quizSnap.exists()) return jsonResponse(false, 'Quiz not found.');
+
+  const quizData = quizSnap.val();
+  quizData.name = newName;
+  const settingsData = settingsSnap.val() || {};
+  settingsData.QuizName = newName;
+
+  await db.ref('quizzes/' + newName).set(quizData);
+  await db.ref('quizSettings/' + newName).set(settingsData);
+  await db.ref('quizzes/' + oldName).remove();
+  await db.ref('quizSettings/' + oldName).remove();
+
+  // Relink existing results so history/leaderboards/analytics still find this quiz.
+  const resultsSnap = await db.ref('results').once('value');
+  const resultsVal = resultsSnap.val() || {};
+  const updates = {};
+  Object.keys(resultsVal).forEach(function (key) {
+    if (resultsVal[key].QuizName === oldName) updates['results/' + key + '/QuizName'] = newName;
+  });
+  if (Object.keys(updates).length) await db.ref().update(updates);
+
+  return jsonResponse(true, 'Quiz renamed to "' + newName + '".', { newQuizName: newName });
 }
 
 async function fbGetQuizQuestionsAdmin(p) {
@@ -165,7 +205,7 @@ async function fbGetQuizQuestionsAdmin(p) {
   const raw = qSnap.val();
   if (!raw) return jsonResponse(false, 'Quiz tab not found.');
   const questions = raw.map(function (q) {
-    return { question: q.Question, optionA: q.OptionA, optionB: q.OptionB, optionC: q.OptionC, optionD: q.OptionD, correctAnswer: q.CorrectAnswer };
+    return { question: q.Question, optionA: q.OptionA, optionB: q.OptionB, optionC: q.OptionC, optionD: q.OptionD, correctAnswer: q.CorrectAnswer, explanation: q.Explanation || '' };
   });
   return jsonResponse(true, 'OK', { quizName: p.quizName, questions: questions });
 }
@@ -183,7 +223,7 @@ async function fbUpdateQuizQuestions(p) {
   if (!validation.ok) return jsonResponse(false, validation.message);
 
   const rows = questions.map(function (q) {
-    return { Question: q.question, OptionA: q.optionA, OptionB: q.optionB, OptionC: q.optionC, OptionD: q.optionD, CorrectAnswer: String(q.correctAnswer).toUpperCase() };
+    return { Question: q.question, OptionA: q.optionA, OptionB: q.optionB, OptionC: q.optionC, OptionD: q.optionD, CorrectAnswer: String(q.correctAnswer).toUpperCase(), Explanation: q.explanation || '' };
   });
   await db.ref('quizzes/' + p.quizName + '/questions').set(rows);
 
@@ -289,6 +329,62 @@ async function fbGetQuizAnalytics(p) {
   return jsonResponse(true, 'OK', { quizAnalytics: out });
 }
 
+/* ---------------------------------------------------------------------------
+   OVERALL TOP PERFORMERS — ranked by average score across ALL published
+   quizzes, counting only students who have attempted every one of them.
+   Also returns the requesting student's own standing/gap-from-#1 if a
+   studentId is supplied, regardless of whether they qualify for the top 3.
+--------------------------------------------------------------------------- */
+async function fbGetOverallTopPerformers(p) {
+  const students = await fbGetAll('students');
+  const results = await fbGetAll('results');
+  const settingsSnap = await db.ref('quizSettings').once('value');
+  const allSettings = settingsSnap.val() || {};
+  const publishedQuizNames = Object.keys(allSettings).filter(function (name) { return fbGetEffectiveReviewStatus(allSettings[name]) === 'Published'; });
+  const totalPublished = publishedQuizNames.length;
+
+  const byStudent = {};
+  results.forEach(function (r) {
+    if (publishedQuizNames.indexOf(r.QuizName) === -1) return; // only count published quizzes
+    if (!byStudent[r.StudentID]) byStudent[r.StudentID] = { quizSet: new Set(), totalPct: 0, count: 0 };
+    const entry = byStudent[r.StudentID];
+    if (!entry.quizSet.has(r.QuizName)) { entry.quizSet.add(r.QuizName); entry.totalPct += Number(r.Percentage) || 0; entry.count++; }
+  });
+
+  const studentById = {};
+  students.forEach(function (s) { studentById[s.StudentID] = s; });
+
+  const everyone = Object.keys(byStudent).map(function (sid) {
+    const e = byStudent[sid];
+    const s = studentById[sid];
+    return {
+      studentId: sid, name: s ? s.Name : 'Unknown', photo: s ? (s.Photo || '') : '',
+      averagePercentage: Math.round((e.totalPct / e.count) * 100) / 100,
+      quizzesAttempted: e.count, attemptedAll: totalPublished > 0 && e.count >= totalPublished
+    };
+  });
+
+  const qualifiers = everyone.filter(function (e) { return e.attemptedAll; }).sort(function (a, b) { return b.averagePercentage - a.averagePercentage; });
+  const top3 = qualifiers.slice(0, 3).map(function (e) { return { studentId: e.studentId, name: e.name, photo: e.photo, averagePercentage: e.averagePercentage, quizzesAttempted: e.quizzesAttempted }; });
+
+  const out = { top3: top3, totalPublishedQuizzes: totalPublished };
+
+  if (!isEmpty(p.studentId)) {
+    const mine = everyone.find(function (e) { return e.studentId === p.studentId; });
+    const topScore = top3.length > 0 ? top3[0].averagePercentage : (mine ? mine.averagePercentage : 0);
+    const qualifierRank = qualifiers.findIndex(function (e) { return e.studentId === p.studentId; });
+    out.you = {
+      averagePercentage: mine ? mine.averagePercentage : 0,
+      quizzesAttempted: mine ? mine.quizzesAttempted : 0,
+      attemptedAll: mine ? mine.attemptedAll : false,
+      rank: qualifierRank >= 0 ? qualifierRank + 1 : null,
+      gapFromTop: mine ? Math.round((topScore - mine.averagePercentage) * 100) / 100 : null
+    };
+  }
+
+  return jsonResponse(true, 'OK', out);
+}
+
 async function fbDeleteResult(p) {
   const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
   var missing = validateRequired(p, ['resultId']);
@@ -298,24 +394,6 @@ async function fbDeleteResult(p) {
   if (!snap.exists()) return jsonResponse(false, 'Result not found.');
   await ref.remove();
   return jsonResponse(true, 'Result deleted.');
-}
-
-async function fbUpdateResult(p) {
-  const auth = await fbRequireAdmin(p); if (!auth.ok) return auth.response;
-  var missing = validateRequired(p, ['resultId']);
-  if (missing.length) return jsonResponse(false, 'Missing fields: ' + missing.join(', '));
-  const ref = db.ref('results/' + p.resultId);
-  const snap = await ref.once('value');
-  const current = snap.val();
-  if (!current) return jsonResponse(false, 'Result not found.');
-
-  const correct = !isEmpty(p.correctAnswers) ? Number(p.correctAnswers) : Number(current.CorrectAnswers);
-  const total = !isEmpty(p.totalQuestions) ? Number(p.totalQuestions) : Number(current.TotalQuestions);
-  const wrong = Math.max(total - correct, 0);
-  const percentage = total > 0 ? Math.round((correct / total) * 10000) / 100 : 0;
-
-  await ref.update({ CorrectAnswers: correct, WrongAnswers: wrong, Score: correct, TotalQuestions: total, Percentage: percentage });
-  return jsonResponse(true, 'Result updated.', { correctAnswers: correct, wrongAnswers: wrong, percentage: percentage });
 }
 
 async function fbGetLeaderboard(p) {
@@ -692,6 +770,7 @@ Object.assign(FIREBASE_ACTIONS, {
   unpublishQuiz: fbUnpublishQuiz,
   requestChanges: fbRequestChanges,
   createQuiz: fbCreateQuiz,
+  renameQuiz: fbRenameQuiz,
   getQuizQuestionsAdmin: fbGetQuizQuestionsAdmin,
   updateQuizQuestions: fbUpdateQuizQuestions,
   deleteQuiz: fbDeleteQuiz,
@@ -699,9 +778,9 @@ Object.assign(FIREBASE_ACTIONS, {
   getAllResults: fbGetAllResults,
   searchStudentResults: fbSearchStudentResults,
   getClassAnalytics: fbGetClassAnalytics,
+  getOverallTopPerformers: fbGetOverallTopPerformers,
   getQuizAnalytics: fbGetQuizAnalytics,
   deleteResult: fbDeleteResult,
-  updateResult: fbUpdateResult,
   getLeaderboard: fbGetLeaderboard,
   getStudentPerformance: fbGetStudentPerformance,
 

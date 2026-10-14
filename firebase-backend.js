@@ -325,6 +325,14 @@ async function fbGetQuizQuestions(p) {
   if (fbGetEffectiveReviewStatus(settings) !== 'Published') return jsonResponse(false, 'This quiz is not currently published.');
   if (fbIsQuizExpired(settings)) return jsonResponse(false, 'This quiz has expired.');
 
+  if (!isEmpty(p.studentId)) {
+    const studentSnap = await db.ref('students/' + p.studentId).once('value');
+    const studentRow = studentSnap.val();
+    if (studentRow && isEmpty(studentRow.Photo)) {
+      return jsonResponse(false, 'Please upload your profile picture before attempting a quiz.');
+    }
+  }
+
   const allowMultiple = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
   if (!allowMultiple && !isEmpty(p.studentId) && await fbStudentHasAttempted(p.studentId, p.quizName)) {
     return jsonResponse(false, 'You have already attempted this quiz.');
@@ -342,8 +350,18 @@ async function fbGetQuizQuestions(p) {
 
   const studentQuestions = order.map(function (idx) {
     const q = rawQuestions[idx];
-    let options = [{ key: 'A', text: q.OptionA }, { key: 'B', text: q.OptionB }, { key: 'C', text: q.OptionC }, { key: 'D', text: q.OptionD }];
-    if (randomizeO) options = shuffleArray(options);
+    // "key" is always the fixed display position (A, B, C, D, in that order).
+    // "originalKey" is which real option now sits in that slot — this is what
+    // actually gets submitted/scored, so content can shuffle freely between
+    // slots while the on-screen A/B/C/D sequence never changes.
+    const base = [{ key: 'A', text: q.OptionA }, { key: 'B', text: q.OptionB }, { key: 'C', text: q.OptionC }, { key: 'D', text: q.OptionD }];
+    let options;
+    if (randomizeO) {
+      const shuffled = shuffleArray(base.map(function (o) { return { originalKey: o.key, text: o.text }; }));
+      options = base.map(function (o, i) { return { key: o.key, text: shuffled[i].text, originalKey: shuffled[i].originalKey }; });
+    } else {
+      options = base.map(function (o) { return { key: o.key, text: o.text, originalKey: o.key }; });
+    }
     return { questionIndex: idx, question: q.Question, options: options };
   });
 
@@ -364,6 +382,15 @@ async function fbSubmitQuiz(p) {
   const allowMultiple = settings.AllowMultipleAttempts === true || String(settings.AllowMultipleAttempts).toUpperCase() === 'TRUE';
   if (!allowMultiple && await fbStudentHasAttempted(p.studentId, p.quizName)) return jsonResponse(false, 'You have already attempted this quiz.');
 
+  // Atomic lock: guards against double-clicks/duplicate network retries submitting the
+  // exact same attempt session twice, even if both requests race past the check above.
+  // Keyed by studentId+quizName+when the attempt started, so a genuinely new attempt
+  // (new startedAt) for a multiple-attempts-allowed quiz is never blocked by this.
+  const lockKey = p.studentId + '_' + p.quizName + '_' + (p.attemptStartedAt || '');
+  const lockRef = db.ref('submissionLocks/' + lockKey.replace(/[.#$\[\]\/]/g, '_'));
+  const lockResult = await lockRef.transaction(function (current) { return current ? undefined : true; });
+  if (!lockResult.committed) return jsonResponse(false, 'This attempt has already been submitted.');
+
   const qSnap = await db.ref('quizzes/' + p.quizName + '/questions').once('value');
   const rawQuestions = qSnap.val();
   if (!rawQuestions) return jsonResponse(false, 'Quiz tab not found.');
@@ -382,7 +409,7 @@ async function fbSubmitQuiz(p) {
     else { status = 'Incorrect'; wrongCount++; }
     return {
       questionIndex: idx, question: q.Question, optionA: q.OptionA, optionB: q.OptionB, optionC: q.OptionC, optionD: q.OptionD,
-      correctAnswer: correct, selected: given, status: status
+      correctAnswer: correct, selected: given, status: status, explanation: q.Explanation || ''
     };
   });
 
@@ -406,7 +433,9 @@ async function fbSubmitQuiz(p) {
   });
 
   return jsonResponse(true, 'Quiz submitted successfully.', {
-    resultId: resultId, score: correctCount, totalQuestions: total, percentage: percentage, correctAnswers: correctCount, wrongAnswers: wrongCount
+    resultId: resultId, score: correctCount, totalQuestions: total, percentage: percentage, correctAnswers: correctCount, wrongAnswers: wrongCount,
+    skippedAnswers: skippedCount, studentName: studentName, quizName: p.quizName, subject: settings.Subject || '',
+    date: fbFormatDate(now), time: fbFormatTime(now), answerDetails: answerDetails
   });
 }
 

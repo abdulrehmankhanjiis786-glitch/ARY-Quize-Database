@@ -67,12 +67,12 @@ const API_ACTIONS = {
   updateAdminProfile: 'updateAdminProfile',
   // Full results control (v3)
   deleteResult: 'deleteResult',
-  updateResult: 'updateResult',
   deleteQuiz: 'deleteQuiz',
   getLeaderboard: 'getLeaderboard',
   getStudentPerformance: 'getStudentPerformance',
   // Quiz question management (v5)
   createQuiz: 'createQuiz',
+  renameQuiz: 'renameQuiz',
   getQuizQuestionsAdmin: 'getQuizQuestionsAdmin',
   updateQuizQuestions: 'updateQuizQuestions',
   // Notifications (v3)
@@ -115,7 +115,8 @@ const API_ACTIONS = {
   deleteFaq: 'deleteFaq',
   getBranding: 'getBranding',
   updateBranding: 'updateBranding',
-  getPlatformStats: 'getPlatformStats'
+  getPlatformStats: 'getPlatformStats',
+  getOverallTopPerformers: 'getOverallTopPerformers'
 };
 
 /* ----------------------------------------------------------------------------
@@ -864,6 +865,46 @@ async function loadStudentDashboard() {
   annEl.innerHTML = anns.length === 0
     ? `<div class="empty-state"><h4>No announcements</h4></div>`
     : anns.map(a => `<div class="announcement-item"><h4>${escapeHtml(a.Title)}</h4><p>${escapeHtml(a.Message)}</p><time>${escapeHtml(a.Date)}</time></div>`).join('');
+
+  loadTopPerformers(s.studentId);
+}
+
+async function loadTopPerformers(studentId, listElId = 'topPerformersList') {
+  const listEl = document.getElementById(listElId);
+  const standingEl = document.getElementById('yourStandingRow');
+  listEl.innerHTML = `<div class="empty-state">Loading…</div>`;
+  const res = await apiCall(API_ACTIONS.getOverallTopPerformers, studentId ? { studentId } : {});
+  if (!res.success) { listEl.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
+  const d = res.data;
+  const medals = ['🥇', '🥈', '🥉'];
+
+  if (!d.top3 || d.top3.length === 0) {
+    listEl.innerHTML = `<div class="empty-state"><h4>No overall leaderboard yet</h4><p>Nobody has completed all ${d.totalPublishedQuizzes} published quiz(zes) yet.</p></div>`;
+  } else {
+    listEl.innerHTML = d.top3.map((t, i) => `
+      <div class="top-performer-row ${studentId && t.studentId === studentId ? 'is-you' : ''}">
+        <span class="top-performer-rank">${medals[i] || (i + 1)}</span>
+        <img class="top-performer-photo" src="${photoOrDefault(t.photo)}" alt="">
+        <div class="top-performer-info"><strong>${escapeHtml(t.name)}</strong><span>${t.quizzesAttempted} quizzes attempted</span></div>
+        <span class="top-performer-score">${fmtPct(t.averagePercentage)}</span>
+      </div>
+    `).join('');
+  }
+
+  if (d.you) {
+    standingEl.classList.remove('hidden');
+    if (d.you.quizzesAttempted === 0) {
+      standingEl.textContent = `You haven't attempted any quizzes yet — take one to see your standing here.`;
+    } else if (d.you.rank === 1) {
+      standingEl.textContent = `🎉 You're #1 overall, with an average of ${fmtPct(d.you.averagePercentage)}!`;
+    } else if (!d.you.attemptedAll) {
+      standingEl.textContent = `Your average so far: ${fmtPct(d.you.averagePercentage)} across ${d.you.quizzesAttempted}/${d.totalPublishedQuizzes} published quizzes. Attempt the rest to qualify for the overall leaderboard.`;
+    } else {
+      standingEl.textContent = `Your average: ${fmtPct(d.you.averagePercentage)} — ${fmtPct(d.you.gapFromTop)} behind the #1 spot.`;
+    }
+  } else {
+    standingEl.classList.add('hidden');
+  }
 }
 
 function renderResultsTable(rows) {
@@ -928,11 +969,17 @@ document.getElementById('refreshQuizzesBtn').addEventListener('click', loadStude
    ============================================================================ */
 const Attempt = {
   quizName: '', questions: [], answers: {}, review: {}, index: 0,
-  durationSeconds: 0, remainingSeconds: 0, timerHandle: null, startedAt: 0
+  durationSeconds: 0, remainingSeconds: 0, timerHandle: null, startedAt: 0,
+  submitting: false, submitted: false
 };
 
 async function startQuizAttempt(quizName) {
   const s = Session.getStudent();
+  if (!s.photo) {
+    toast('Please upload your profile picture before attempting a quiz.', 'warning');
+    navigate('student-profile');
+    return;
+  }
   const res = await apiCall(API_ACTIONS.getQuizQuestions, { quizName, studentId: s.studentId });
   if (!res.success) { toast(res.message || 'Could not start this quiz.', 'error'); return; }
   const d = res.data;
@@ -945,6 +992,11 @@ async function startQuizAttempt(quizName) {
   Attempt.durationSeconds = (d.durationMinutes || 30) * 60;
   Attempt.remainingSeconds = Attempt.durationSeconds;
   Attempt.startedAt = Date.now();
+  Attempt.submitting = false;
+  Attempt.submitted = false;
+  const submitBtnEl = document.getElementById('attemptSubmitBtn');
+  submitBtnEl.disabled = false;
+  setBtnLoading(submitBtnEl, false);
 
   document.getElementById('attemptQuizName').textContent = quizName;
   document.getElementById('attemptStudentInfo').textContent = `${s.name} — ${s.className || ''}`;
@@ -985,7 +1037,7 @@ function renderQuestion() {
   const optsEl = document.getElementById('attemptOptions');
   const selected = Attempt.answers[q.questionIndex];
   optsEl.innerHTML = q.options.map(opt => `
-    <div class="attempt-option ${selected === opt.key ? 'is-selected' : ''}" data-key="${opt.key}">
+    <div class="attempt-option ${selected === opt.originalKey ? 'is-selected' : ''}" data-key="${opt.originalKey}">
       <span class="opt-letter">${opt.key}</span>
       <span>${escapeHtml(opt.text)}</span>
     </div>
@@ -1028,6 +1080,7 @@ document.getElementById('attemptMarkBtn').addEventListener('click', () => {
   renderQuestion(); renderPalette();
 });
 document.getElementById('attemptSubmitBtn').addEventListener('click', async () => {
+  if (Attempt.submitting || Attempt.submitted) return;
   const unanswered = Attempt.questions.filter(q => !Attempt.answers[q.questionIndex]).length;
   const ok = await confirmModal('Submit quiz?', unanswered > 0
     ? `You have ${unanswered} unanswered question(s). Submit anyway?`
@@ -1036,18 +1089,31 @@ document.getElementById('attemptSubmitBtn').addEventListener('click', async () =
 });
 
 async function finishAttempt(auto) {
+  // Guard against double-clicks / the auto-submit timer firing at the same
+  // moment the student clicks Submit — only one of these can ever proceed.
+  if (Attempt.submitting || Attempt.submitted) return;
+  Attempt.submitting = true;
+  const submitBtn = document.getElementById('attemptSubmitBtn');
+  setBtnLoading(submitBtn, true);
+  submitBtn.disabled = true;
+
   clearInterval(Attempt.timerHandle);
   const s = Session.getStudent();
   const answers = Attempt.questions.map(q => ({ questionIndex: q.questionIndex, selected: Attempt.answers[q.questionIndex] || '' }));
   const timeTakenSeconds = Math.max(Math.round((Date.now() - Attempt.startedAt) / 1000), 0);
   const res = await apiCall(API_ACTIONS.submitQuiz, {
-    studentId: s.studentId, quizName: Attempt.quizName, answers: JSON.stringify(answers), timeTakenSeconds
+    studentId: s.studentId, quizName: Attempt.quizName, answers: JSON.stringify(answers), timeTakenSeconds,
+    attemptStartedAt: Attempt.startedAt
   });
 
   if (!res.success) {
     toast(res.message || 'Could not submit your quiz. Please try again.', 'error');
+    Attempt.submitting = false;
+    setBtnLoading(submitBtn, false);
+    submitBtn.disabled = false;
     return;
   }
+  Attempt.submitted = true;
 
   // Check the freshly-updated leaderboard to see if this attempt landed at #1.
   let isTopScore = false;
@@ -1056,8 +1122,20 @@ async function finishAttempt(auto) {
     const top = (lbRes.data.leaderboard || [])[0];
     isTopScore = !!top && top.resultId === res.data.resultId;
   }
+  lastSubmittedResult = {
+    ResultID: res.data.resultId, StudentID: s.studentId, StudentName: res.data.studentName, StudentPhoto: s.photo || '',
+    QuizName: res.data.quizName, Subject: res.data.subject || '', Date: res.data.date, Time: res.data.time, TimeTakenSeconds: timeTakenSeconds,
+    Score: res.data.score, TotalQuestions: res.data.totalQuestions, Percentage: res.data.percentage,
+    CorrectAnswers: res.data.correctAnswers, WrongAnswers: res.data.wrongAnswers, SkippedAnswers: res.data.skippedAnswers,
+    AnswerDetails: res.data.answerDetails
+  };
   showResultModal(res.data, Attempt.quizName, isTopScore);
 }
+let lastSubmittedResult = null;
+document.getElementById('resultViewReportBtn').addEventListener('click', () => {
+  closeModal('resultModal');
+  openReportModal(lastSubmittedResult);
+});
 
 function showResultModal(d, quizName, isTopScore) {
   document.getElementById('resultQuizName').textContent = quizName;
@@ -1285,6 +1363,7 @@ function openReportModal(r) {
             return `<div class="${cls}">${key}. ${escapeHtml(text)}${key === q.selected ? ' (Your answer)' : ''}${key === q.correctAnswer ? ' (Correct answer)' : ''}</div>`;
           }).join('')}
         </div>
+        ${q.explanation ? `<div class="report-q-explanation"><strong>Why?</strong> ${escapeHtml(q.explanation)}</div>` : ''}
       </div>`;
     }).join('');
   }
@@ -1510,6 +1589,8 @@ async function loadAdminDashboard() {
     : `<table><thead><tr><th>Name</th><th>Class</th></tr></thead><tbody>
         ${pendingStudents.map(s => `<tr><td>${escapeHtml(s.Name)}</td><td>${escapeHtml(s.Class)}</td></tr>`).join('')}
       </tbody></table>`;
+
+  loadTopPerformers(null, 'adminTopPerformersList');
 }
 
 /* ============================================================================
@@ -1621,13 +1702,47 @@ document.getElementById('studentStatusFilter').addEventListener('click', (e) => 
 /* ============================================================================
    ADMIN: QUIZZES (+ QUIZ REVIEW re-uses the same table into a different target)
    ============================================================================ */
+let adminQuizzesCache = [];
 async function loadAdminQuizzes(targetId = 'adminQuizzesTable') {
   const el = document.getElementById(targetId);
   el.innerHTML = `<div class="empty-state">Loading…</div>`;
   const res = await apiCall(API_ACTIONS.getAllQuizzesAdmin, adminAuthParams());
   if (!res.success) { el.innerHTML = `<div class="empty-state">${escapeHtml(res.message)}</div>`; return; }
-  const quizzes = res.data.quizzes || [];
-  if (quizzes.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No quiz tabs detected</h4><p>Add a new sheet tab with Question/OptionA-D/CorrectAnswer columns.</p></div>`; return; }
+  adminQuizzesCache = res.data.quizzes || [];
+
+  if (targetId === 'adminQuizzesTable') {
+    const subjectSelect = document.getElementById('aqFilterSubject');
+    const subjects = [...new Set(adminQuizzesCache.map(q => q.Subject).filter(Boolean))].sort();
+    subjectSelect.innerHTML = `<option value="">All Subjects</option>` + subjects.map(s => `<option value="${escapeHtml(s)}">${escapeHtml(s)}</option>`).join('');
+    initFilterPillGroup('aqFilterType', () => renderAdminQuizzesTable(targetId));
+    initFilterPillGroup('aqFilterStatus', () => renderAdminQuizzesTable(targetId));
+  }
+  renderAdminQuizzesTable(targetId);
+}
+document.getElementById('aqFilterSubject')?.addEventListener('change', () => renderAdminQuizzesTable('adminQuizzesTable'));
+document.getElementById('aqFilterSemester')?.addEventListener('change', () => renderAdminQuizzesTable('adminQuizzesTable'));
+
+function renderAdminQuizzesTable(targetId) {
+  const el = document.getElementById(targetId);
+  let quizzes = adminQuizzesCache;
+
+  if (targetId === 'adminQuizzesTable') {
+    const subjectF = document.getElementById('aqFilterSubject').value;
+    const semesterF = document.getElementById('aqFilterSemester').value;
+    const typeF = document.getElementById('aqFilterType').dataset.value || '';
+    const statusF = document.getElementById('aqFilterStatus').dataset.value || '';
+    quizzes = quizzes.filter(q => {
+      const isActive = q.Active === true || String(q.Active).toUpperCase() === 'TRUE';
+      if (subjectF && q.Subject !== subjectF) return false;
+      if (semesterF && String(q.Semester) !== semesterF) return false;
+      if (typeF && q.QuizType !== typeF) return false;
+      if (statusF === 'Published' && !isActive) return false;
+      if (statusF === 'Inactive' && isActive) return false;
+      return true;
+    });
+  }
+
+  if (quizzes.length === 0) { el.innerHTML = `<div class="empty-state"><h4>No quizzes match</h4><p>Try a different filter, or add a new sheet tab with Question/OptionA-D/CorrectAnswer columns.</p></div>`; return; }
 
   el.innerHTML = `<table><thead><tr><th>Quiz</th><th>Subject</th><th>Semester</th><th>Status</th><th>Questions</th><th>Duration</th><th>Type</th><th>Expiry</th><th>Actions</th></tr></thead><tbody>
     ${quizzes.map(q => {
@@ -1742,15 +1857,26 @@ let qeMode = 'create'; // 'create' | 'edit'
 let qeEditingQuizName = '';
 let qeRows = []; // [{question, optionA, optionB, optionC, optionD, correctAnswer}]
 
+function qeSetSettingsFields(s) {
+  document.getElementById('qeSubject').value = s.Subject || '';
+  document.getElementById('qeSemester').value = s.Semester || '';
+  document.getElementById('qeQuizType').value = s.QuizType || 'Regular';
+  document.getElementById('qeDuration').value = s.DurationMinutes || 30;
+  document.getElementById('qeExpiryDate').value = s.ExpiryDate || '';
+  document.getElementById('qeExpiryTime').value = s.ExpiryTime || '';
+  document.getElementById('qeAllowMultiple').checked = s.AllowMultipleAttempts === true || String(s.AllowMultipleAttempts).toUpperCase() === 'TRUE';
+  document.getElementById('qeRandomizeQ').checked = s.RandomizeQuestions === true || String(s.RandomizeQuestions).toUpperCase() === 'TRUE';
+  document.getElementById('qeRandomizeO').checked = s.RandomizeOptions === true || String(s.RandomizeOptions).toUpperCase() === 'TRUE';
+}
+
 function openQuestionEditor(quizName) {
-  const nameField = document.getElementById('qeQuizNameField');
   const nameInput = document.getElementById('qeQuizName');
   if (quizName) {
     qeMode = 'edit';
     qeEditingQuizName = quizName;
-    document.getElementById('questionEditorTitle').textContent = 'Edit Questions — ' + quizName;
-    nameField.classList.add('hidden');
+    document.getElementById('questionEditorTitle').textContent = 'Edit Quiz — ' + quizName;
     nameInput.value = quizName;
+    qeSetSettingsFields((adminQuizzesCache || []).find(q => q.QuizName === quizName) || {});
     qeRows = [];
     renderQeRows();
     document.getElementById('qeQuestionRows').innerHTML = `<div class="empty-state">Loading questions…</div>`;
@@ -1763,8 +1889,8 @@ function openQuestionEditor(quizName) {
     qeMode = 'create';
     qeEditingQuizName = '';
     document.getElementById('questionEditorTitle').textContent = 'Create New Quiz';
-    nameField.classList.remove('hidden');
     nameInput.value = '';
+    qeSetSettingsFields({});
     qeRows = [blankQeRow()];
     renderQeRows();
   }
@@ -1774,7 +1900,7 @@ function openQuestionEditor(quizName) {
 document.getElementById('newQuizBtn').addEventListener('click', () => openQuestionEditor(null));
 document.getElementById('questionEditorCancelBtn').addEventListener('click', () => closeModal('questionEditorModal'));
 
-function blankQeRow() { return { question: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswer: 'A' }; }
+function blankQeRow() { return { question: '', optionA: '', optionB: '', optionC: '', optionD: '', correctAnswer: 'A', explanation: '' }; }
 
 function renderQeRows() {
   const container = document.getElementById('qeQuestionRows');
@@ -1795,6 +1921,7 @@ function renderQeRows() {
           ${['A', 'B', 'C', 'D'].map(l => `<option value="${l}" ${q.correctAnswer === l ? 'selected' : ''}>${l}</option>`).join('')}
         </select>
       </div>
+      <textarea rows="2" class="qe-explanation" placeholder="Short explanation — why is this the correct answer? (optional, shown to students after they submit)" data-field="explanation" data-index="${i}">${escapeHtml(q.explanation || '')}</textarea>
     </div>
   `).join('');
 
@@ -1814,8 +1941,9 @@ document.getElementById('qeAddRowBtn').addEventListener('click', () => {
   document.getElementById('qeQuestionRows').scrollTop = document.getElementById('qeQuestionRows').scrollHeight;
 });
 
-// Parses "Question | OptA | OptB | OptC | OptD | CorrectLetter" per line and
-// appends them as new rows — the fast path for uploading many questions at once.
+// Parses "Question | OptA | OptB | OptC | OptD | CorrectLetter | Explanation"
+// per line (explanation is optional — 6 or 7 fields both work) and appends
+// them as new rows — the fast path for uploading many questions at once.
 document.getElementById('qeBulkImportBtn').addEventListener('click', () => {
   const raw = document.getElementById('qeBulkText').value;
   const lines = raw.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1825,8 +1953,11 @@ document.getElementById('qeBulkImportBtn').addEventListener('click', () => {
   const parsed = [];
   lines.forEach(line => {
     const parts = line.split('|').map(s => s.trim());
-    if (parts.length !== 6 || ['A', 'B', 'C', 'D'].indexOf(parts[5].toUpperCase()) === -1) { skipped++; return; }
-    parsed.push({ question: parts[0], optionA: parts[1], optionB: parts[2], optionC: parts[3], optionD: parts[4], correctAnswer: parts[5].toUpperCase() });
+    if ((parts.length !== 6 && parts.length !== 7) || ['A', 'B', 'C', 'D'].indexOf(parts[5].toUpperCase()) === -1) { skipped++; return; }
+    parsed.push({
+      question: parts[0], optionA: parts[1], optionB: parts[2], optionC: parts[3], optionD: parts[4],
+      correctAnswer: parts[5].toUpperCase(), explanation: parts[6] || ''
+    });
     added++;
   });
 
@@ -1853,14 +1984,39 @@ document.getElementById('questionEditorForm').addEventListener('submit', async (
     }
   }
 
+  const settingsPayload = {
+    subject: document.getElementById('qeSubject').value.trim(),
+    semester: document.getElementById('qeSemester').value,
+    quizType: document.getElementById('qeQuizType').value,
+    durationMinutes: document.getElementById('qeDuration').value,
+    expiryDate: document.getElementById('qeExpiryDate').value,
+    expiryTime: document.getElementById('qeExpiryTime').value,
+    allowMultipleAttempts: document.getElementById('qeAllowMultiple').checked,
+    randomizeQuestions: document.getElementById('qeRandomizeQ').checked,
+    randomizeOptions: document.getElementById('qeRandomizeO').checked
+  };
+
   setBtnLoading(btn, true);
   let res;
   if (qeMode === 'create') {
     const quizName = document.getElementById('qeQuizName').value.trim();
     if (!quizName) { setBtnLoading(btn, false); toast('Enter a quiz name.', 'error'); return; }
-    res = await apiCall(API_ACTIONS.createQuiz, { quizName, questions: JSON.stringify(cleaned), ...adminAuthParams() });
+    res = await apiCall(API_ACTIONS.createQuiz, { quizName, questions: JSON.stringify(cleaned), ...settingsPayload, ...adminAuthParams() });
   } else {
-    res = await apiCall(API_ACTIONS.updateQuizQuestions, { quizName: qeEditingQuizName, questions: JSON.stringify(cleaned), ...adminAuthParams() });
+    let targetQuizName = qeEditingQuizName;
+    const typedName = document.getElementById('qeQuizName').value.trim();
+
+    if (typedName && typedName !== qeEditingQuizName) {
+      const renameRes = await apiCall(API_ACTIONS.renameQuiz, { oldQuizName: qeEditingQuizName, newQuizName: typedName, ...adminAuthParams() });
+      if (!renameRes.success) { setBtnLoading(btn, false); toast(renameRes.message || 'Could not rename the quiz.', 'error'); return; }
+      targetQuizName = typedName;
+    }
+
+    res = await apiCall(API_ACTIONS.updateQuizQuestions, { quizName: targetQuizName, questions: JSON.stringify(cleaned), ...adminAuthParams() });
+    if (res.success) {
+      const settingsRes = await apiCall(API_ACTIONS.updateQuizSettings, { quizName: targetQuizName, ...settingsPayload, ...adminAuthParams() });
+      if (!settingsRes.success) res = settingsRes;
+    }
   }
   setBtnLoading(btn, false);
 
@@ -1979,7 +2135,6 @@ function renderAdminResultsTable(rows) {
       <td>${escapeHtml(r.Time)}</td>
       <td class="row-actions">
         <button class="btn btn-ghost btn-sm" data-action="view-result" data-id="${escapeHtml(r.ResultID)}">View Details</button>
-        <button class="btn btn-outline btn-sm" data-action="edit-result" data-id="${escapeHtml(r.ResultID)}">Edit</button>
         <button class="btn btn-danger btn-sm" data-action="delete-result" data-id="${escapeHtml(r.ResultID)}">Delete</button>
       </td>
     </tr>`).join('')}
@@ -1998,30 +2153,8 @@ function renderAdminResultsTable(rows) {
       else toast(res.message || 'Could not delete result.', 'error');
     });
   });
-  el.querySelectorAll('[data-action="edit-result"]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      const r = rows.find(x => x.ResultID === btn.dataset.id);
-      openResultEditModal(r);
-    });
-  });
 }
 
-function openResultEditModal(r) {
-  const correct = prompt(`Correct answers for ${r.StudentName} — ${r.QuizName}\n(out of ${r.TotalQuestions} total questions):`, r.CorrectAnswers);
-  if (correct === null) return;
-  const total = prompt('Total questions (leave as-is unless the quiz changed):', r.TotalQuestions);
-  if (total === null) return;
-  const correctNum = Number(correct), totalNum = Number(total);
-  if (isNaN(correctNum) || isNaN(totalNum) || correctNum < 0 || totalNum <= 0 || correctNum > totalNum) {
-    toast('Enter valid numbers (correct answers cannot exceed total questions).', 'error');
-    return;
-  }
-  apiCall(API_ACTIONS.updateResult, { resultId: r.ResultID, correctAnswers: correctNum, totalQuestions: totalNum, ...adminAuthParams() })
-    .then(res => {
-      if (res.success) { toast('Result updated.', 'success'); loadAdminResults(); }
-      else toast(res.message || 'Could not update result.', 'error');
-    });
-}
 document.getElementById('resultsSearchInput').addEventListener('input', debounce(async (e) => {
   const q = e.target.value.trim();
   if (!q) { loadAdminResults(); return; }
